@@ -34,7 +34,7 @@ python app.py
 3. הוסף Environment Variable בשם `AUTH_SECRET` עם ערך ארוך וסודי.
 4. Deploy.
 
-חשוב: SQLite מקומי מתאים לפיתוח בלבד. בפרודקשן ב-Vercel צריך לחבר DB חיצוני כמו Neon/Supabase/Postgres, כי אחסון הקבצים של Serverless אינו מיועד לשמירת נתונים קבועה. כרגע שכבת ה-DB מופרדת ב-`retention_battle/db.py`, כך שזה המקום להוסיף adapter ל-Postgres.
+חשוב: SQLite מתאים לפיתוח בלבד. ב-Vercel הקובץ נכתב ל-`/tmp` כדי שפעולות כתיבה כמו הרשמה יעבדו, אבל זה אחסון זמני ועלול להתאפס בין הרצות/פריסות. לפרודקשן אמיתי צריך לחבר DB חיצוני כמו Neon/Supabase/Postgres. כרגע שכבת ה-DB מופרדת ב-`retention_battle/db.py`, כך שזה המקום להוסיף adapter ל-Postgres.
 
 ## מה כבר עובד בגרסת Python
 
