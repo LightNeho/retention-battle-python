@@ -27,7 +27,20 @@ SCHEMAS = {
 }
 
 
+def is_postgres():
+    return bool(DATABASE_URL and DATABASE_URL.startswith(("postgres://", "postgresql://")))
+
+
+def placeholder():
+    return "%s" if is_postgres() else "?"
+
+
 def connect():
+    if is_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
     if DATABASE_URL and DATABASE_URL.startswith("sqlite:///"):
         path = DATABASE_URL.replace("sqlite:///", "", 1)
     else:
@@ -44,6 +57,7 @@ def setup_schema():
 
 
 def rows(table, where="", params=()):
+    where = _sql(where)
     with connect() as conn:
         cur = conn.execute(f"SELECT * FROM {table} {where}", params)
         return [dict(row) for row in cur.fetchall()]
@@ -56,7 +70,7 @@ def one(table, where, params=()):
 
 def insert(table, data):
     keys = list(data.keys())
-    placeholders = ",".join(["?"] * len(keys))
+    placeholders = ",".join([placeholder()] * len(keys))
     with connect() as conn:
         conn.execute(f"INSERT INTO {table} ({','.join(keys)}) VALUES ({placeholders})", [data[k] for k in keys])
 
@@ -65,15 +79,21 @@ def update(table, key_field, key_value, data):
     keys = list(data.keys())
     if not keys:
         return
-    assignments = ",".join([f"{key}=?" for key in keys])
+    assignments = ",".join([f"{key}={placeholder()}" for key in keys])
     with connect() as conn:
-        conn.execute(f"UPDATE {table} SET {assignments} WHERE {key_field}=?", [data[k] for k in keys] + [key_value])
+        conn.execute(f"UPDATE {table} SET {assignments} WHERE {key_field}={placeholder()}", [data[k] for k in keys] + [key_value])
 
 
 def upsert_config(key, value):
+    p = placeholder()
     with connect() as conn:
         conn.execute(
-            "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            f"INSERT INTO config (key, value) VALUES ({p}, {p}) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, str(value)),
         )
 
+
+def _sql(fragment):
+    if not is_postgres():
+        return fragment
+    return fragment.replace("?", "%s")

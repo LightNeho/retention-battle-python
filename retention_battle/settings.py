@@ -13,5 +13,5 @@ TOKEN_TTL_SECONDS = 12 * 60 * 60
 def validate_runtime_config():
     if IS_PRODUCTION and AUTH_SECRET == "dev-change-me":
         raise RuntimeError("AUTH_SECRET must be configured in production.")
-    if DATABASE_URL and not DATABASE_URL.startswith("sqlite:///"):
-        raise RuntimeError("Only sqlite:/// DATABASE_URL is wired in this version. Use DATABASE_PATH locally, or add a Postgres adapter before production data.")
+    if DATABASE_URL and not DATABASE_URL.startswith(("sqlite:///", "postgres://", "postgresql://")):
+        raise RuntimeError("DATABASE_URL must start with sqlite:///, postgres://, or postgresql://.")
