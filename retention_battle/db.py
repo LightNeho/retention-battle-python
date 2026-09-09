@@ -3,6 +3,9 @@ import sqlite3
 from .settings import DATABASE_PATH, DATABASE_URL
 
 
+_POSTGRES_POOL = None
+
+
 SCHEMAS = {
     "config": "key TEXT PRIMARY KEY, value TEXT",
     "users": "user_id TEXT PRIMARY KEY, name TEXT, role TEXT, team_id TEXT, email TEXT, pin_hash TEXT, claimed INTEGER",
@@ -35,12 +38,24 @@ def placeholder():
     return "%s" if is_postgres() else "?"
 
 
+def _postgres_pool():
+    global _POSTGRES_POOL
+    if _POSTGRES_POOL is None:
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        _POSTGRES_POOL = ConnectionPool(
+            conninfo=DATABASE_URL,
+            min_size=1,
+            max_size=3,
+            kwargs={"row_factory": dict_row, "prepare_threshold": None},
+        )
+    return _POSTGRES_POOL
+
+
 def connect():
     if is_postgres():
-        import psycopg
-        from psycopg.rows import dict_row
-
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        return _postgres_pool().connection()
     if DATABASE_URL and DATABASE_URL.startswith("sqlite:///"):
         path = DATABASE_URL.replace("sqlite:///", "", 1)
     else:
