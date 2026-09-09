@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RETENTION BATTLE — הקרב על כל לקוח</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800;900&display=swap');
+
+  :root{
+    --bg:#080B14; --bg-alt:#0D111C; --card:#121827;
+    --border: rgba(148,163,184,.12);
+    --primary:#0EA5C4; --cyan:#22D3EE; --purple:#0A6E78;
+    --success:#22C55E; --warning:#F59E0B; --danger:#EF4444;
+    --gold:#FBBF24; --silver:#CBD5E1; --bronze:#D97706;
+    --text:#F8FAFC; --text-secondary:#94A3B8;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:
+      radial-gradient(1100px 550px at 88% -8%, rgba(14,165,196,.14), transparent 60%),
+      radial-gradient(900px 550px at -8% 8%, rgba(10,110,120,.10), transparent 60%),
+      radial-gradient(700px 400px at 50% 100%, rgba(34,211,238,.06), transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:'Heebo',sans-serif; direction:rtl; text-align:right;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  a{color:inherit; text-decoration:none;}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+  @media (max-width:720px){ .wrap{padding:0 18px;} }
+
+  /* ---------- Nav ---------- */
+  nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(10px); background:rgba(8,11,20,.75);
+    border-bottom:1px solid var(--border);}
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:68px;}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:15px;}
+  .brand-mark{width:32px; height:32px; border-radius:9px; background:linear-gradient(135deg,var(--primary),var(--purple));
+    display:flex; align-items:center; justify-content:center; font-size:15px; color:#fff; font-weight:900;}
+  .brand-partner{font-size:10.5px; font-weight:800; color:var(--cyan); letter-spacing:1px; display:block; line-height:1.1;}
+  .nav-links{display:flex; gap:28px; font-size:13.5px; font-weight:600; color:var(--text-secondary);}
+  .nav-links a:hover{color:var(--text);}
+  @media (max-width:720px){ .nav-links{display:none;} }
+  .btn{display:inline-flex; align-items:center; gap:8px; border-radius:12px; padding:11px 22px; font-weight:700; font-size:13.5px;
+    border:1px solid var(--border); background:var(--card); color:var(--text); transition:.18s;}
+  .btn.primary{background:linear-gradient(135deg,var(--primary),var(--purple)); border:none; color:#fff;
+    box-shadow:0 6px 20px rgba(14,165,196,.25);}
+  .btn.primary:hover{filter:brightness(1.1); transform:translateY(-1px);}
+  .btn.ghost:hover{border-color:var(--primary);}
+
+  /* ---------- Hero ---------- */
+  header.hero{padding:88px 0 60px;}
+  .hero-grid{display:grid; grid-template-columns:1.05fr .95fr; gap:56px; align-items:center;}
+  @media (max-width:960px){ .hero-grid{grid-template-columns:1fr;} }
+  .eyebrow{display:inline-flex; align-items:center; gap:8px; background:#101627; border:1px solid var(--border);
+    border-radius:999px; padding:6px 14px; font-size:12px; font-weight:700; color:var(--cyan); margin-bottom:22px;}
+  h1{font-size:clamp(34px,5vw,54px); font-weight:900; line-height:1.08; letter-spacing:-1px;}
+  h1 .accent{background:linear-gradient(90deg,var(--cyan),var(--primary)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .hero-sub{color:var(--text-secondary); font-size:16.5px; line-height:1.7; margin:22px 0 32px; max-width:520px;}
+  .hero-cta{display:flex; gap:14px; flex-wrap:wrap;}
+  .hero-stats{display:flex; gap:34px; margin-top:44px; flex-wrap:wrap;}
+  .hero-stat b{display:block; font-size:24px; font-weight:900; color:var(--text);}
+  .hero-stat span{font-size:12px; color:var(--text-secondary); font-weight:600;}
+
+  /* ---------- Hero visual: live team battle mock ---------- */
+  .hero-visual{position:relative;}
+  .glow{position:absolute; inset:-40px; background:radial-gradient(circle at 60% 30%, rgba(10,110,120,.25), transparent 60%); filter:blur(30px); z-index:0;}
+  .mock-card{position:relative; z-index:1; background:linear-gradient(180deg,var(--card),#0e1424); border:1px solid var(--border);
+    border-radius:22px; padding:22px; box-shadow:0 25px 70px rgba(0,0,0,.5);}
+  .mock-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;}
+  .mock-head .t{font-weight:800; font-size:13px;}
+  .live-dot{display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:var(--success);}
+  .live-dot i{width:7px; height:7px; border-radius:50%; background:var(--success); animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.3;}}
+  .mock-row{display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px; margin-bottom:8px; background:#0c1120; border:1px solid var(--border);}
+  .mock-row.gold{border-color:rgba(251,191,36,.4);}
+  .mock-medal{width:26px; text-align:center; font-size:15px;}
+  .mock-name{flex:1; font-weight:700; font-size:13px;}
+  .mock-bar-track{width:80px; height:6px; border-radius:99px; background:#161e30; overflow:hidden;}
+  .mock-bar{height:100%; background:linear-gradient(90deg,var(--primary),var(--cyan)); border-radius:99px;}
+  .mock-score{font-weight:800; font-size:13px; color:var(--cyan); width:38px; text-align:left;}
+
+  /* ---------- Section shell ---------- */
+  section{padding:86px 0;}
+  .section-head{max-width:620px; margin-bottom:48px;}
+  .section-head .kicker{color:var(--cyan); font-size:12.5px; font-weight:800; margin-bottom:10px;}
+  .section-head h2{font-size:clamp(26px,3.4vw,36px); font-weight:800; line-height:1.2;}
+  .section-head p{color:var(--text-secondary); font-size:15px; margin-top:14px; line-height:1.7;}
+
+  /* ---------- Feature grid ---------- */
+  .features{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+  @media (max-width:900px){ .features{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:600px){ .features{grid-template-columns:1fr;} }
+  .feature{background:var(--card); border:1px solid var(--border); border-radius:18px; padding:26px; transition:.2s;}
+  .feature:hover{transform:translateY(-3px); border-color:rgba(14,165,196,.35);}
+  .feature .ic{font-size:24px; margin-bottom:14px;}
+  .feature h3{font-size:15.5px; font-weight:800; margin-bottom:8px;}
+  .feature p{font-size:13.5px; color:var(--text-secondary); line-height:1.65;}
+
+  /* ---------- Three competitions ---------- */
+  .comp-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+  @media (max-width:900px){ .comp-grid{grid-template-columns:1fr;} }
+  .comp-card{border-radius:20px; padding:28px; border:1px solid var(--border); position:relative; overflow:hidden;}
+  .comp-card.c1{background:linear-gradient(160deg, rgba(14,165,196,.14), var(--card) 60%);}
+  .comp-card.c2{background:linear-gradient(160deg, rgba(10,110,120,.14), var(--card) 60%);}
+  .comp-card.c3{background:linear-gradient(160deg, rgba(34,211,238,.12), var(--card) 60%);}
+  .comp-card .num{font-size:12px; font-weight:800; color:var(--text-secondary); margin-bottom:14px;}
+  .comp-card h3{font-size:19px; font-weight:800; margin-bottom:10px;}
+  .comp-card p{font-size:13.5px; color:var(--text-secondary); line-height:1.7;}
+
+  /* ---------- How it works ---------- */
+  .steps{display:grid; grid-template-columns:repeat(4,1fr); gap:20px;}
+  @media (max-width:900px){ .steps{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:560px){ .steps{grid-template-columns:1fr;} }
+  .step{border-right:2px solid var(--border); padding-right:18px;}
+  .step .n{font-size:26px; font-weight:900; color:var(--cyan); margin-bottom:10px;}
+  .step h4{font-size:14.5px; font-weight:800; margin-bottom:8px;}
+  .step p{font-size:13px; color:var(--text-secondary); line-height:1.6;}
+
+  /* ---------- CTA band ---------- */
+  .cta-band{background:linear-gradient(120deg, rgba(14,165,196,.16), rgba(10,110,120,.16)); border:1px solid var(--border);
+    border-radius:26px; padding:52px 40px; text-align:center;}
+  .cta-band h2{font-size:28px; font-weight:800; margin-bottom:12px;}
+  .cta-band p{color:var(--text-secondary); font-size:14.5px; margin-bottom:26px;}
+
+  footer{border-top:1px solid var(--border); padding:36px 0; color:var(--text-secondary); font-size:12.5px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><div class="brand-mark">P</div><span><span class="brand-partner">PARTNER</span>RETENTION BATTLE</span></div>
+    <div class="nav-links">
+      <a href="#competitions">תחרויות</a>
+      <a href="#features">יכולות</a>
+      <a href="#how">איך זה עובד</a>
+    </div>
+    <a href="#" class="btn primary">כניסה / הרשמה</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">🔥 מערכת תחרות שימור למוקדי שירות</div>
+      <h1>הפכו כל בדיקת שיחה<br>ל<span class="accent">קרב אמיתי</span></h1>
+      <p class="hero-sub">RETENTION BATTLE הופכת נתוני שימור לקוחות יבשים לתחרות שבועית חיה — עם Leaderboards, פודיום, משימות ניהול ו-Badges. הצוות שלכם יפתח את המערכת כי הוא רוצה לדעת איפה הוא עומד, לא כי הוא חייב.</p>
+      <div class="hero-cta">
+        <a href="#" class="btn primary">🚀 כניסה / הרשמה כנציג</a>
+        <a href="#how" class="btn ghost">איך זה עובד ↓</a>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><b>3</b><span>תחרויות מקבילות</span></div>
+        <div class="hero-stat"><b>8</b><span>Badges להשגה</span></div>
+        <div class="hero-stat"><b>100%</b><span>מבוסס נתונים אמיתיים</span></div>
+      </div>
+    </div>
+
+    <div class="hero-visual">
+      <div class="glow"></div>
+      <div class="mock-card">
+        <div class="mock-head">
+          <span class="t">⚔️ TEAM BATTLE — שימור</span>
+          <span class="live-dot"><i></i>LIVE</span>
+        </div>
+        <div class="mock-row gold"><span class="mock-medal">🥇</span><span class="mock-name">צוות אירון</span><div class="mock-bar-track"><div class="mock-bar" style="width:92%"></div></div><span class="mock-score">198</span></div>
+        <div class="mock-row"><span class="mock-medal">🥈</span><span class="mock-name">צוות פרואקטיב</span><div class="mock-bar-track"><div class="mock-bar" style="width:78%"></div></div><span class="mock-score">171</span></div>
+        <div class="mock-row"><span class="mock-medal">🥉</span><span class="mock-name">צוות פולס</span><div class="mock-bar-track"><div class="mock-bar" style="width:65%"></div></div><span class="mock-score">149</span></div>
+        <div class="mock-head" style="margin-top:20px;"><span class="t">⚔️ TEAM BATTLE — שירות</span></div>
+        <div class="mock-row gold"><span class="mock-medal">🥇</span><span class="mock-name">צוות טוי</span><div class="mock-bar-track"><div class="mock-bar" style="width:85%"></div></div><span class="mock-score">168</span></div>
+        <div class="mock-row"><span class="mock-medal">🥈</span><span class="mock-name">צוות ליגה</span><div class="mock-bar-track"><div class="mock-bar" style="width:60%"></div></div><span class="mock-score">142</span></div>
+        <div class="mock-head" style="margin-top:20px;"><span class="t">👑 TOP AGENT</span></div>
+        <div class="mock-row"><span class="mock-medal">1</span><span class="mock-name">רוני חדד</span><div class="mock-bar-track"><div class="mock-bar" style="width:88%"></div></div><span class="mock-score">64</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="competitions">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">⚔️ שלוש חזיתות</div>
+      <h2>תחרות אחת לא מספיקה</h2>
+      <p>RETENTION BATTLE מריצה שלוש תחרויות בו-זמנית, כדי שלכל אחד במוקד — נציג, ראש צוות, וגם הצוות כולו — יהיה משהו אישי להילחם עליו.</p>
+    </div>
+    <div class="comp-grid">
+      <div class="comp-card c1">
+        <div class="num">01</div>
+        <h3>🏆 קרב הצוותים</h3>
+        <p>שלושת הצוותים מתמודדים זה מול זה, עם שיטת ניקוד ניתנת לבחירה (סה"כ / ממוצע לנציג / משוקלל) כדי שצוות גדול לא יזכה רק בגלל גודלו.</p>
+      </div>
+      <div class="comp-card c2">
+        <div class="num">02</div>
+        <h3>👑 קרב הנציגים</h3>
+        <p>דירוג אישי לכל נציג במוקד, עם פודיום ויזואלי ל-3 המובילים ו"מה חסר לי כדי לעבור את המקום הבא" — כדי שההתקדמות תמיד תרגיש קרובה.</p>
+      </div>
+      <div class="comp-card c3">
+        <div class="num">03</div>
+        <h3>🧑‍💼 קרב ראשי הצוותים</h3>
+        <p>ניקוד ניהולי נפרד, מבוסס ביצועי צוות והשלמת משימות מנהל — לא העתק של נקודות הנציגים, אלא מדד אמיתי להובלה.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">⚡ מה מקבלים</div>
+      <h2>כל מה שצריך כדי שהתחרות תרגיש חיה</h2>
+      <p>לא Google Sheet עם צבעים. מוצר SaaS מלא, עם כל הפרטים הקטנים שהופכים תחרות מ"עוד דוח" ל"וואו, יש פה קרב".</p>
+    </div>
+    <div class="features">
+      <div class="feature"><div class="ic">📊</div><h3>Live Dashboard</h3><p>KPI Cards, Countdown לסוף השבוע, ו-Live Feed שמתעדכן אוטומטית מכל פעילות במערכת.</p></div>
+      <div class="feature"><div class="ic">✅</div><h3>משימות מנהל</h3><p>אוטומטיות שמזהות תנאים בעצמן, וידניות לאישור אחמ"ש — עם נקודות שמתווספות ישירות לניקוד ראש הצוות.</p></div>
+      <div class="feature"><div class="ic">🏅</div><h3>Badges והישגים</h3><p>מ-HOT STREAK ועד PERFECT CALL, עם הגנת מדגם מינימלי כדי שהישג לא יינתן על בסיס שיחה בודדת.</p></div>
+      <div class="feature"><div class="ic">📺</div><h3>TV Mode</h3><p>מצב מסך מלא לתצוגה על מסך במוקד — רק הקרב, בלי בקרות ניהול.</p></div>
+      <div class="feature"><div class="ic">🏛</div><h3>Hall of Fame</h3><p>היסטוריית ניצחונות לאורך זמן, רצפים, ושיאים שבועיים — התחרות לא מתאפסת, היא נזכרת.</p></div>
+      <div class="feature"><div class="ic">🔒</div><h3>הרשאות ופרטיות</h3><p>הערות אחמ"ש נשארות פנימיות, וכל שינוי ניהולי נרשם ב-Audit Log מלא.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">🛠️ איך זה עובד</div>
+      <h2>מנתונים גולמיים לתחרות חיה</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h4>אחמ"ש בודק שיחה</h4><p>מזין ציונים ב-8 קטגוריות ותוצאת שימור — לוקח פחות מדקה.</p></div>
+      <div class="step"><div class="n">02</div><h4>הניקוד מתעדכן מיידית</h4><p>הדשבורד, ה-Leaderboards וה-Live Feed מתעדכנים בזמן אמת לכל המוקד.</p></div>
+      <div class="step"><div class="n">03</div><h4>משימות ו-Badges נבדקים אוטומטית</h4><p>המערכת מזהה בעצמה אם תנאי הושג, ומעניקה נקודות והישגים בהתאם.</p></div>
+      <div class="step"><div class="n">04</div><h4>השבוע נסגר, ההיסטוריה נשמרת</h4><p>Snapshot לכל שבוע ב-Hall of Fame — בלי למחוק אף רשומה.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="cta-band">
+      <h2>מוכנים להפוך את המוקד לזירת קרב?</h2>
+      <p>הקרב על כל לקוח מתחיל בבדיקת השיחה הבאה.</p>
+      <a href="#" class="btn primary">🚀 כניסה / הרשמה כנציג</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:12px;">
+    <span>RETENTION BATTLE — הקרב על כל לקוח</span>
+    <span>נבנה על Google Apps Script · Google Sheets כ-Database</span>
+  </div>
+</footer>
+
+</body>
+</html>

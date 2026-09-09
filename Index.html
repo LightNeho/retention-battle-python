@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Styles'); ?>
+</head>
+<body class="<?= tvMode ? 'tv-mode' : '' ?>">
+
+  <div id="login-screen">
+    <div class="card login-card">
+      <div class="login-logo"><span class="partner-label" style="text-align:center;">PARTNER</span>RETENTION BATTLE</div>
+      <div class="login-sub">הקרב על כל לקוח</div>
+      <div id="login-wizard"></div>
+    </div>
+  </div>
+
+  <div id="app-shell" style="display:none;">
+    <div id="sidebar-backdrop"></div>
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">P</div>
+        <div class="brand-text"><span class="partner-label">PARTNER</span>RETENTION<br>BATTLE</div>
+      </div>
+      <nav id="nav-list"></nav>
+      <button class="sidebar-toggle" id="sidebar-toggle-btn">◂ צמצום תפריט</button>
+    </aside>
+
+    <main id="main">
+      <div class="topbar">
+        <div>
+          <button id="hamburger">☰</button>
+          <span class="page-title" id="page-title">Dashboard</span>
+          <div class="page-sub" id="page-sub"></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="search-box">
+            <span>🔍</span>
+            <input id="global-search" placeholder="חיפוש נציג / צוות...">
+          </div>
+          <select class="week-select" id="week-select"></select>
+          <div class="user-chip">
+            <div class="user-avatar" id="user-avatar-chip">?</div>
+            <span id="user-name-chip"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-root"></div>
+    </main>
+  </div>
+
+  <div id="modal-root"><div class="modal-backdrop" id="modal-backdrop"></div><div class="modal-box" id="modal-box"></div></div>
+  <div id="toast-root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <?!= include('Components'); ?>
+  <?!= include('Scripts'); ?>
+</body>
+</html>

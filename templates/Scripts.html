@@ -1,0 +1,1251 @@
+<script>
+/* ============ Scripts.html ============ */
+
+var APP = {
+  user: null,
+  weekId: null,
+  availableWeeks: [],
+  route: 'dashboard',
+  lastFeedTimestamp: null,
+  pollTimer: null,
+  chartInstances: {}
+};
+
+var NAV_ITEMS = [
+  { key:'dashboard', icon:'🏠', label:'Dashboard', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'mycalls', icon:'📞', label:'השיחות שלי', roles:['AGENT'] },
+  { key:'leaderboards', icon:'🏆', label:'דירוגים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'teams', icon:'👥', label:'צוותים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'agents', icon:'👑', label:'נציגים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'leaders', icon:'🧑\u200d💼', label:'ראשי צוותים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'tasks', icon:'✅', label:'משימות מנהל', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER'] },
+  { key:'badges', icon:'⭐', label:'Badges', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'hof', icon:'🏛', label:'Hall of Fame', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
+  { key:'analytics', icon:'📊', label:'Analytics', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER'] },
+  { key:'admin', icon:'⚙️', label:'ניהול', roles:['ADMIN','SHIFT_MANAGER'] }
+];
+
+/* ---------- Flask/Vercel API wrapper ---------- */
+function callServer(fnName){
+  var args = Array.prototype.slice.call(arguments, 1);
+  return fetch('/api/call', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ function: fnName, args: args })
+  }).then(function(res){ return res.json(); }).then(function(payload){
+    if (!payload.success) throw new Error(payload.error || 'שגיאה לא צפויה');
+    return payload.data;
+  });
+}
+
+/* ---------- Toasts ---------- */
+function toast(message, type){
+  var root = document.getElementById('toast-root');
+  var el = document.createElement('div');
+  el.className = 'toast ' + (type||'');
+  el.textContent = message;
+  root.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 3800);
+}
+
+/* ---------- Modal ---------- */
+function openModal(html){
+  document.getElementById('modal-box').innerHTML = html;
+  document.getElementById('modal-root').classList.add('open');
+}
+function closeModal(){ document.getElementById('modal-root').classList.remove('open'); }
+document.getElementById('modal-backdrop').addEventListener('click', closeModal);
+
+/* ---------- Count-up animation ---------- */
+function animateCountUps(container){
+  (container||document).querySelectorAll('.count-up').forEach(function(el){
+    var target = Number(el.getAttribute('data-target')) || 0;
+    var start = 0, duration = 700, startTime = null;
+    function step(ts){
+      if(!startTime) startTime = ts;
+      var progress = Math.min(1, (ts-startTime)/duration);
+      el.textContent = (start + (target-start)*progress).toFixed(1);
+      if(progress < 1) requestAnimationFrame(step); else el.textContent = target;
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+/* ---------- Init ---------- */
+window.addEventListener('DOMContentLoaded', function(){
+  var savedToken = localStorage.getItem('rb_token');
+  if(savedToken){
+    APP.authToken = savedToken;
+    callServer('getCurrentUser', savedToken).then(function(user){
+      enterApp(user);
+    }).catch(function(){
+      // הטוקן פג תוקף/לא תקין - חזרה למסך כניסה
+      localStorage.removeItem('rb_token');
+      renderWizardStart();
+    });
+  } else {
+    renderWizardStart();
+  }
+});
+
+/* ================= Agent registration / login wizard ================= */
+var WIZ = { mode:null, division:null, teamId:null, teamName:null };
+
+function wizardShell(innerHtml, showBack, backFn){
+  var back = showBack ? '<div class="wizard-back" onclick="'+backFn+'">→ חזרה</div>' : '';
+  document.getElementById('login-wizard').innerHTML = back + innerHtml;
+}
+
+function renderWizardStart(){
+  WIZ = { mode:null, division:null, teamId:null, teamName:null };
+  wizardShell(
+    '<button class="wizard-choice" onclick="wizardSelectMode(\'login\')">'
+      + '<div class="wc-title">🔑 כניסה</div><div class="wc-sub">כבר נרשמתי למערכת</div></button>'
+    + '<button class="wizard-choice" onclick="wizardSelectMode(\'signup\')">'
+      + '<div class="wc-title">🆕 כניסה ראשונה — הרשמה כנציג</div><div class="wc-sub">זו הפעם הראשונה שלי במערכת</div></button>'
+    + '<a class="legacy-link" href="#" onclick="renderLegacyLogin(); return false;">כניסת ניהול / ראש צוות ←</a>',
+    false
+  );
+}
+
+function wizardSelectMode(mode){
+  WIZ.mode = mode;
+  callServer('getDivisions').then(function(divisions){
+    var html = '<div class="wizard-step-title">מאיזה מוקד את/ה?</div>'
+      + divisions.map(function(d){
+          return '<button class="wizard-choice" onclick="wizardSelectDivision('+aj(d)+')"><div class="wc-title">'+esc(d)+'</div></button>';
+        }).join('');
+    wizardShell(html, true, 'renderWizardStart()');
+  });
+}
+
+function wizardSelectDivision(division){
+  WIZ.division = division;
+  callServer('getTeamsByDivision', division).then(function(teams){
+    var label = WIZ.mode==='signup' ? 'לאיזה צוות את/ה שייך/ת?' : 'באיזו מחלקה את/ה?';
+    var html = '<div class="wizard-step-title">'+label+'</div>'
+      + (teams.length ? teams.map(function(t){
+          return '<button class="wizard-choice" onclick="wizardSelectTeam('+aj(t.teamId)+', '+aj(t.name)+')"><div class="wc-title">'+esc(t.name)+'</div></button>';
+        }).join('') : emptyState('👥','אין עדיין צוותים במוקד הזה'));
+    wizardShell(html, true, 'wizardSelectMode(\''+WIZ.mode+'\')');
+  });
+}
+
+function wizardSelectTeam(teamId, teamName){
+  WIZ.teamId = teamId; WIZ.teamName = teamName;
+  var fn = WIZ.mode==='signup' ? 'getUnclaimedAgentsForTeam' : 'getClaimedAgentsForTeam';
+  callServer(fn, teamId).then(function(agents){
+    var html = '<div class="wizard-step-title">מי את/ה, '+esc(teamName)+'?</div>';
+    if(!agents.length){
+      html += WIZ.mode==='signup'
+        ? emptyState('✅','כל הנציגים בצוות הזה כבר רשומים. נסה/י דרך מסך "כניסה".')
+        : emptyState('👤','עדיין אין נציגים רשומים בצוות הזה. נסה/י דרך "כניסה ראשונה".');
+    } else {
+      agents.forEach(function(a){
+        var action = WIZ.mode==='signup' ? 'wizardRegister' : 'wizardPromptPin';
+        html += '<button class="wizard-choice" onclick="'+action+'('+aj(a.agentId)+', '+aj(a.name)+')"><div class="wc-title">'+esc(a.name)+'</div></button>';
+      });
+    }
+    wizardShell(html, true, 'wizardSelectDivision('+aj(WIZ.division)+')');
+  });
+}
+
+/** כניסה ראשונה: נבחר שם → השרת מייצר PIN אקראי ומציג פעם אחת בלבד */
+function wizardRegister(agentId, name){
+  wizardShell('<div class="empty-state">טוען...</div>', true, 'wizardSelectTeam('+aj(WIZ.teamId)+', '+aj(WIZ.teamName)+')');
+  callServer('registerAgent', agentId).then(function(res){
+    var html = '<div class="pin-reveal">'
+      + '<div class="wc-title" style="font-size:16px;">ברוך/ה הבא/ה, '+esc(name)+'!</div>'
+      + '<div style="color:var(--text-secondary); font-size:13px; margin-top:6px;">זהו קוד ה-PIN האישי שלך — שמור/י אותו, הוא לא יוצג שוב:</div>'
+      + '<div class="digits">'+res.pin+'</div>'
+      + '<div class="warn">⚠️ תצטרך/י את הקוד הזה בכל כניסה הבאה למערכת</div>'
+      + '<button class="btn primary" style="width:100%; margin-top:18px;" onclick="wizardFinishRegistration()">המשך למערכת</button>'
+      + '</div>';
+    document.getElementById('login-wizard').innerHTML = html;
+    localStorage.setItem('rb_token', res.token);
+    APP.authToken = res.token;
+    APP._pendingUser = res.user;
+  }).catch(function(err){
+    wizardShell('<div class="alert danger">⚠️ '+esc(err.message)+'</div>', true, 'wizardSelectTeam('+aj(WIZ.teamId)+', '+aj(WIZ.teamName)+')');
+  });
+}
+function wizardFinishRegistration(){ enterApp(APP._pendingUser); }
+
+/** כניסה רגילה: נבחר שם רשום → מזינים PIN קיים */
+function wizardPromptPin(agentId, name){
+  var html = '<div class="wizard-step-title">כניסה כ-'+esc(name)+'</div>'
+    + '<div class="field"><label>קוד PIN אישי</label><input type="password" inputmode="numeric" id="wiz-pin-input" maxlength="8" autofocus></div>'
+    + '<div id="wiz-pin-error" style="color:var(--danger); font-size:12.5px; margin-bottom:10px;"></div>'
+    + '<button class="btn primary" style="width:100%;" onclick="wizardSubmitLogin('+aj(agentId)+')">כניסה</button>';
+  wizardShell(html, true, 'wizardSelectTeam('+aj(WIZ.teamId)+', '+aj(WIZ.teamName)+')');
+  document.getElementById('wiz-pin-input').addEventListener('keydown', function(e){
+    if(e.key==='Enter') wizardSubmitLogin(agentId);
+  });
+}
+function wizardSubmitLogin(agentId){
+  var pin = document.getElementById('wiz-pin-input').value;
+  callServer('login', agentId, pin).then(function(res){
+    localStorage.setItem('rb_token', res.token);
+    APP.authToken = res.token;
+    enterApp(res.user);
+  }).catch(function(err){
+    document.getElementById('wiz-pin-error').textContent = err.message || 'שגיאה בהתחברות';
+  });
+}
+
+/* ================= Legacy login (Admin / Team Leader / Shift Manager) ================= */
+function renderLegacyLogin(){
+  callServer('getUsersForRoleSelection').then(function(users){
+    var roleLabels = {ADMIN:'מנהל מערכת', SHIFT_MANAGER:'אחמ"ש', TEAM_LEADER:'ראש צוות', AGENT:'נציג', VIEWER:'צפייה'};
+    var relevant = users.filter(function(u){ return u.role==='ADMIN' || u.role==='SHIFT_MANAGER' || u.role==='TEAM_LEADER'; });
+    var html = relevant.map(function(u){
+      return '<div class="user-option" onclick="promptForPin(\''+u.userId+'\', '+aj(u.name)+')">'
+        + '<span>'+esc(u.name)+'</span><span class="role-tag">'+(roleLabels[u.role]||u.role)+'</span></div>';
+    }).join('');
+    wizardShell(html || emptyState('👤','אין משתמשי ניהול במערכת'), true, 'renderWizardStart()');
+  });
+}
+
+/**
+ * לחיצה על שם ברשימה לא מחברת מיד - היא רק בוחרת "מי אתה טוען שאתה".
+ * ההתחברות בפועל דורשת קוד PIN, שהשרת מאמת מול Hash שמור - כך שאי אפשר
+ * להיכנס בתור מישהו אחר רק כי יודעים את ה-userId שלו.
+ */
+function promptForPin(userId, name){
+  var html = '<div class="modal-title">כניסה כ-'+esc(name)+'</div>'
+    + '<div class="field"><label>קוד PIN אישי</label><input type="password" inputmode="numeric" id="pin-input" maxlength="8" autofocus></div>'
+    + '<div id="pin-error" style="color:var(--danger); font-size:12.5px; margin-bottom:10px;"></div>'
+    + '<button class="btn primary" style="width:100%;" onclick="submitLogin(\''+userId+'\')">כניסה</button>';
+  openModal(html);
+  document.getElementById('pin-input').addEventListener('keydown', function(e){
+    if(e.key==='Enter') submitLogin(userId);
+  });
+}
+function submitLogin(userId){
+  var pin = document.getElementById('pin-input').value;
+  callServer('login', userId, pin).then(function(res){
+    closeModal();
+    localStorage.setItem('rb_token', res.token);
+    APP.authToken = res.token;
+    enterApp(res.user);
+  }).catch(function(err){
+    document.getElementById('pin-error').textContent = err.message || 'שגיאה בהתחברות';
+  });
+}
+
+function enterApp(user){
+  APP.user = user;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'flex';
+  document.getElementById('user-name-chip').textContent = user.name;
+  document.getElementById('user-avatar-chip').textContent = initials(user.name);
+  document.querySelector('.user-chip').style.cursor = 'pointer';
+  document.querySelector('.user-chip').onclick = openChangePinModal;
+  buildSidebar();
+  loadWeeks().then(function(){
+    handleRoute();
+    startPolling();
+  });
+}
+
+function logout(){
+  localStorage.removeItem('rb_token');
+  location.reload();
+}
+
+function openChangePinModal(){
+  var html = '<div class="modal-title">שינוי קוד PIN אישי</div>'
+    + '<div class="field"><label>קוד נוכחי</label><input type="password" inputmode="numeric" id="old-pin"></div>'
+    + '<div class="field"><label>קוד חדש (לפחות 4 ספרות)</label><input type="password" inputmode="numeric" id="new-pin"></div>'
+    + '<div id="pin-change-error" style="color:var(--danger); font-size:12.5px; margin-bottom:10px;"></div>'
+    + '<div style="display:flex; gap:10px;"><button class="btn primary" onclick="submitPinChange()">עדכן קוד</button><button class="btn" onclick="closeModal()">ביטול</button><button class="btn danger" style="margin-right:auto;" onclick="logout()">התנתקות</button></div>';
+  openModal(html);
+}
+function submitPinChange(){
+  var oldPin = document.getElementById('old-pin').value, newPin = document.getElementById('new-pin').value;
+  callServer('changeOwnPin', APP.authToken, oldPin, newPin).then(function(){
+    closeModal(); toast('קוד ה-PIN עודכן בהצלחה', 'success');
+  }).catch(function(err){ document.getElementById('pin-change-error').textContent = err.message; });
+}
+
+/* ---------- Sidebar / nav ---------- */
+function buildSidebar(){
+  var html = '';
+  NAV_ITEMS.filter(function(n){ return n.roles.indexOf(APP.user.role) !== -1; }).forEach(function(item){
+    html += '<a class="nav-item" data-nav="'+item.key+'" href="#'+item.key+'">'
+      + '<span class="ic">'+item.icon+'</span><span class="nav-label">'+item.label+'</span></a>';
+  });
+  document.getElementById('nav-list').innerHTML = html;
+  document.getElementById('sidebar-toggle-btn').onclick = function(){
+    document.getElementById('sidebar').classList.toggle('collapsed');
+  };
+  document.getElementById('hamburger').onclick = function(){
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.toggle('show');
+  };
+  document.getElementById('sidebar-backdrop').onclick = function(){
+    document.getElementById('sidebar').classList.remove('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.remove('show');
+  };
+}
+
+window.addEventListener('hashchange', handleRoute);
+
+/* ---------- Week selector ---------- */
+function loadWeeks(){
+  return callServer('getAvailableWeeks').then(function(weeks){
+    APP.availableWeeks = weeks;
+    return callServer('getCurrentWeekId');
+  }).then(function(current){
+    APP.weekId = current;
+    var sel = document.getElementById('week-select');
+    sel.innerHTML = APP.availableWeeks.map(function(w){
+      var label = (w===current) ? (w+' — השבוע הנוכחי') : w;
+      return '<option value="'+w+'"'+(w===APP.weekId?' selected':'')+'>'+label+'</option>';
+    }).join('');
+    sel.onchange = function(){ APP.weekId = sel.value; APP.lastFeedTimestamp=null; renderCurrentRoute(); };
+  });
+}
+
+/* ---------- Router ---------- */
+function handleRoute(){
+  var hash = location.hash.replace('#','') || 'dashboard';
+  APP.route = hash;
+  document.querySelectorAll('.nav-item').forEach(function(n){
+    n.classList.toggle('active', hash.split('/')[0] === n.getAttribute('data-nav'));
+  });
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  var backdrop = document.getElementById('sidebar-backdrop');
+  if(backdrop) backdrop.classList.remove('show');
+  renderCurrentRoute();
+}
+
+/* click delegation for data-route links inside rendered components */
+document.addEventListener('click', function(e){
+  var el = e.target.closest('[data-route]');
+  if(el){ location.hash = el.getAttribute('data-route'); }
+});
+
+function setPageTitle(title, sub){
+  document.getElementById('page-title').textContent = title;
+  document.getElementById('page-sub').textContent = sub || '';
+}
+
+function renderCurrentRoute(){
+  var root = document.getElementById('view-root');
+  var parts = APP.route.split('/');
+  var page = parts[0], param = parts[1];
+  root.innerHTML = skeleton('100%','200px') + skeleton('100%','200px');
+
+  var routes = {
+    dashboard: renderDashboardPage,
+    mycalls: renderMyCallsPage,
+    leaderboards: renderLeaderboardsPage,
+    teams: function(){ param ? renderTeamDetailPage(param) : renderTeamsListPage(); },
+    agents: function(){ param ? renderAgentDetailPage(param) : renderAgentsListPage(); },
+    leaders: function(){ param ? renderLeaderDetailPage(param) : renderLeadersListPage(); },
+    tasks: renderTasksPage,
+    badges: renderBadgesPage,
+    hof: renderHofPage,
+    analytics: renderAnalyticsPage,
+    admin: renderAdminPage
+  };
+  (routes[page] || renderDashboardPage)();
+}
+
+/* ================= DASHBOARD ================= */
+function renderDashboardPage(){
+  setPageTitle('RETENTION BATTLE', 'שבוע ' + APP.weekId);
+  callServer('getDashboardData', APP.authToken, APP.weekId).then(function(d){
+    APP.lastFeedTimestamp = (d.activityFeed[0] && d.activityFeed[0].timestamp) || null;
+    var html = '';
+
+    html += renderCountdown(d.weekMeta);
+
+    // כרטיס "Leading Team" נפרד לכל מוקד - אין תחרות בין שימור לשירות
+    var leadingTeamCards = d.kpis.leadingTeamsByDivision.map(function(entry){
+      return renderKpiCard('🏆','Leading Team — '+entry.division, entry.team ? entry.team.name : '—', entry.team ? (entry.team.score+' נק׳') : '');
+    }).join('');
+    html += '<div class="grid grid-4">'
+      + leadingTeamCards
+      + renderKpiCard('👑','Top Agent', d.kpis.topAgent ? d.kpis.topAgent.name : '—', d.kpis.topAgent ? (d.kpis.topAgent.points+' נק׳') : '')
+      + renderKpiCard('🧑\u200d💼','Leading Team Leader', d.kpis.leadingLeader ? d.kpis.leadingLeader.name : '—', d.kpis.leadingLeader ? ('Score '+d.kpis.leadingLeader.score) : '')
+      + '</div>';
+
+    html += renderTeamBattleByDivision(d.teamBattleByDivision, '⚔️ TEAM BATTLE');
+
+    html += '<div class="section-title">👑 TOP AGENTS</div>';
+    html += renderPodium(d.topAgents);
+    html += '<div class="card">' + renderLeaderboardHeader() + d.agentLeaderboard.slice(0,10).map(renderAgentRow).join('') + '</div>';
+
+    html += '<div class="section-title">🧑\u200d💼 TEAM LEADER BATTLE</div>';
+    html += '<div class="grid grid-3">' + d.leaderBattle.map(renderLeaderCard).join('') + '</div>';
+
+    html += '<div class="section-title">📡 LIVE FEED</div>';
+    html += '<div class="card" id="live-feed-box">' + (d.activityFeed.length ? d.activityFeed.map(function(i){return renderFeedItem(i,false);}).join('') : emptyState('📡','אין עדיין אירועים השבוע')) + '</div>';
+
+    document.getElementById('view-root').innerHTML = html;
+    animateCountUps();
+  }).catch(showLoadError);
+}
+
+function renderCountdown(weekMeta){
+  var end = new Date(weekMeta.endDate);
+  return '<div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">'
+    + '<div><div style="font-weight:800; font-size:15px;">WEEK '+weekMeta.weekId+'</div><div class="kpi-sub">הקרב על כל לקוח</div></div>'
+    + '<div id="week-countdown" data-end="'+end.getTime()+'" style="font-weight:800; font-size:18px; color:var(--cyan);"></div>'
+    + '</div>';
+}
+setInterval(function(){
+  var el = document.getElementById('week-countdown');
+  if(!el) return;
+  var diff = Number(el.getAttribute('data-end')) - Date.now();
+  if(diff < 0){ el.textContent = 'השבוע הסתיים'; return; }
+  var d = Math.floor(diff/86400000), h = Math.floor(diff%86400000/3600000), m = Math.floor(diff%3600000/60000), s = Math.floor(diff%60000/1000);
+  el.textContent = d+'ד '+h+'ש '+m+'ד '+s+'ש עד סוף השבוע';
+}, 1000);
+
+/* ================= LEADERBOARDS ================= */
+function renderLeaderboardsPage(){
+  setPageTitle('דירוגים', 'שבוע ' + APP.weekId);
+  var tab = APP._lbTab || 'AGENT';
+  var html = '<div class="toggle-group" style="max-width:420px; margin-bottom:18px;">'
+    + tabBtn('AGENT','נציגים',tab) + tabBtn('TEAM','צוותים',tab) + tabBtn('LEADER','ראשי צוותים',tab) + '</div>'
+    + '<div id="lb-content">'+skeleton('100%','300px')+'</div>';
+  document.getElementById('view-root').innerHTML = html;
+  loadLeaderboardTab(tab);
+}
+function tabBtn(val,label,active){
+  return '<button class="toggle-btn'+(active===val?' selected yes':'')+'" onclick="switchLbTab(\''+val+'\')">'+label+'</button>';
+}
+function switchLbTab(tab){ APP._lbTab = tab; renderLeaderboardsPage(); }
+function loadLeaderboardTab(type){
+  if(type==='TEAM'){
+    callServer('getTeamBattleByDivision', APP.weekId).then(function(groups){
+      document.getElementById('lb-content').innerHTML = renderTeamBattleByDivision(groups, '⚔️ צוותים');
+      animateCountUps();
+    });
+    return;
+  }
+  callServer('getLeaderboard', type, APP.weekId).then(function(list){
+    var html;
+    if(type==='AGENT'){
+      html = '<div class="card">'+renderLeaderboardHeader()+list.map(renderAgentRow).join('')+'</div>';
+    } else {
+      html = '<div class="grid grid-3">'+list.map(renderLeaderCard).join('')+'</div>';
+    }
+    document.getElementById('lb-content').innerHTML = html || emptyState('🏆','אין נתונים');
+    animateCountUps();
+  });
+}
+
+/* ================= TEAMS ================= */
+function renderTeamsListPage(){
+  setPageTitle('צוותים','שבוע ' + APP.weekId);
+  callServer('getTeamBattleByDivision', APP.weekId).then(function(groups){
+    document.getElementById('view-root').innerHTML = renderTeamBattleByDivision(groups, '👥 צוותים');
+    animateCountUps();
+  });
+}
+function renderTeamDetailPage(teamId){
+  setPageTitle('פרופיל צוות');
+  callServer('getTeamProfile', APP.authToken, teamId, APP.weekId).then(function(t){
+    setPageTitle(t.name, 'מוקד '+t.division+' · ראש צוות: ' + t.leaderName);
+    var html = '<div class="grid grid-4">'
+      + renderKpiCard('🏅','מקום ב'+t.division, '#'+t.rank+' מתוך '+t.divisionTeamCount)
+      + renderKpiCard('⚡','Score', t.score)
+      + renderKpiCard('📞','אחוז שימור', t.successRate+'%')
+      + renderKpiCard('⭐','איכות ממוצעת', t.avgQuality)
+      + '</div>';
+
+    html += '<div class="grid grid-2" style="margin-top:18px;">'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">✅ חוזקות הצוות</div>'
+      + (t.strengths.length ? t.strengths.map(function(s){return '<div class="badge-chip" style="margin:0 4px 6px 0;">✅ '+esc(s)+'</div>';}).join('') : emptyState('✅','אין עדיין מספיק נתונים'))
+      + '</div>'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">⚠️ נקודות לשיפור</div>'
+      + (t.improvements.length ? t.improvements.map(function(s){return '<div class="badge-chip" style="margin:0 4px 6px 0;">⚠️ '+esc(s)+'</div>';}).join('') : emptyState('⚠️','אין עדיין מספיק נתונים'))
+      + '</div></div>';
+
+    html += '<div class="section-title">📈 ביצועים לפי יום</div><div class="card"><canvas id="teamDailyChart" height="90"></canvas></div>';
+    html += '<div class="section-title">Leaderboard פנימי</div><div class="card">'+renderLeaderboardHeader()+t.internalLeaderboard.map(renderAgentRow).join('')+'</div>';
+
+    document.getElementById('view-root').innerHTML = html;
+    animateCountUps();
+    drawLineChart('teamDailyChart', t.dailyPerformance.map(function(d){return d.date;}),
+      [{label:'בדיקות', data:t.dailyPerformance.map(function(d){return d.calls;}), color:'#0EA5C4'},
+       {label:'שימורים', data:t.dailyPerformance.map(function(d){return d.retentions;}), color:'#22D3EE'}]);
+  }).catch(showLoadError);
+}
+
+/* ================= AGENTS ================= */
+function renderAgentsListPage(){
+  setPageTitle('נציגים','שבוע ' + APP.weekId);
+  callServer('getLeaderboard','AGENT',APP.weekId).then(function(list){
+    document.getElementById('view-root').innerHTML = renderPodium(list.slice(0,3))
+      + '<div class="card">'+renderLeaderboardHeader()+list.map(renderAgentRow).join('')+'</div>';
+    animateCountUps();
+  });
+}
+function renderAgentDetailPage(agentId){
+  setPageTitle('פרופיל נציג');
+  callServer('getAgentProfile', APP.authToken, agentId, APP.weekId).then(function(a){
+    setPageTitle(a.name, a.teamName + ' · מקום #' + (a.rank||'—'));
+    var html = '<div class="grid grid-4">'
+      + renderKpiCard('⚡','ניקוד', a.stats.points)
+      + renderKpiCard('📞','שימורים', a.stats.successfulRetentions)
+      + renderKpiCard('🎯','אחוז הצלחה', a.stats.successRate+'%')
+      + renderKpiCard('⭐','איכות ממוצעת', a.stats.avgQuality)
+      + '</div>';
+
+    if(a.nextRankLabel){
+      html += '<div class="alert success" style="margin-top:14px;">🚀 '+esc(a.nextRankLabel)+'</div>';
+    }
+
+    html += '<div class="section-title">🏅 Badges</div><div class="badge-grid">'
+      + (a.badges.length ? a.badges.map(function(b){return renderBadgeTile({icon:b.icon,name:b.name,description:b.weekId});}).join('') : emptyState('🏅','עדיין אין Badges - קדימה!'))
+      + '</div>';
+
+    html += '<div class="grid grid-2" style="margin-top:18px;">'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">ביצועים במהלך השבוע</div><canvas id="agentDailyChart" height="110"></canvas></div>'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">איכות לפי קטגוריה</div><canvas id="agentCatChart" height="110"></canvas></div>'
+      + '</div>';
+
+    document.getElementById('view-root').innerHTML = html;
+    drawLineChart('agentDailyChart', a.dailyPerformance.map(function(d){return d.date;}),
+      [{label:'נקודות', data:a.dailyPerformance.map(function(d){return round1(d.points);}), color:'#0A6E78'}]);
+    drawBarChart('agentCatChart', a.categoryBreakdown.map(function(c){return c.label;}), a.categoryBreakdown.map(function(c){return c.value;}));
+  }).catch(showLoadError);
+}
+function round1(n){ return Math.round(n*10)/10; }
+
+/* ================= LEADERS ================= */
+function renderLeadersListPage(){
+  setPageTitle('ראשי צוותים','שבוע ' + APP.weekId);
+  callServer('getLeaderboard','LEADER',APP.weekId).then(function(list){
+    document.getElementById('view-root').innerHTML = '<div class="grid grid-3">'+list.map(renderLeaderCard).join('')+'</div>';
+    animateCountUps();
+  });
+}
+function renderLeaderDetailPage(leaderId){
+  setPageTitle('Dashboard ראש צוות');
+  callServer('getLeaderDashboard', APP.authToken, leaderId, APP.weekId).then(function(l){
+    setPageTitle(l.name, 'מקום #'+(l.rank||'—')+' בקרב ראשי הצוותים');
+    var html = l.alerts.map(renderAlert).join('');
+    html += '<div class="grid grid-3">'
+      + renderKpiCard('⚡','Score ניהולי', l.score)
+      + renderKpiCard('✅','משימות הושלמו', l.tasks.filter(function(t){return t.status==='הושלם';}).length + '/' + l.tasks.length)
+      + renderKpiCard('📈','משתפרים בצוות', l.improving.length)
+      + '</div>';
+
+    html += '<div class="section-title">👥 ביצועי הנציגים שלי</div><div class="card">'+renderLeaderboardHeader()+l.teamAgents.map(renderAgentRow).join('')+'</div>';
+
+    if(l.needsAttention.length){
+      html += '<div class="section-title">🆘 מי צריך תשומת לב</div><div class="grid grid-3">'
+        + l.needsAttention.map(function(a){ return renderKpiCard('🆘', a.name, a.successRate+'% הצלחה', a.callsReviewed+' בדיקות'); }).join('') + '</div>';
+    }
+
+    html += '<div class="section-title">✅ המשימות שלי</div><div class="grid grid-2">'
+      + l.tasks.map(function(t){ return renderTaskCard(t, false); }).join('') + '</div>';
+
+    document.getElementById('view-root').innerHTML = html;
+    animateCountUps();
+  }).catch(showLoadError);
+}
+
+/* ================= TASKS (admin/leader) ================= */
+function renderTasksPage(){
+  setPageTitle('משימות מנהל','שבוע ' + APP.weekId);
+  var canApprove = APP.user.role==='ADMIN' || APP.user.role==='SHIFT_MANAGER';
+  Promise.all([callServer('getLeaderboard','LEADER',APP.weekId), callServer('getManagerTaskResults', APP.weekId)])
+    .then(function(res){
+      var leaders = res[0], allTasks = res[1];
+      var html = leaders.map(function(l){
+        var tasks = allTasks.filter(function(t){ return t.leaderId===l.leaderId; });
+        return '<div class="section-title">🧑\u200d💼 '+esc(l.name)+'</div><div class="grid grid-2">'
+          + tasks.map(function(t){ return renderTaskCard(t, canApprove); }).join('') + '</div>';
+      }).join('');
+      document.getElementById('view-root').innerHTML = html || emptyState('✅','אין משימות מוגדרות');
+    });
+}
+function approveTask(resultId){
+  callServer('completeManualTask', APP.authToken, resultId).then(function(){
+    toast('המשימה סומנה כהושלמה', 'success'); renderTasksPage();
+  }).catch(function(e){ toast(e.message,'error'); });
+}
+
+/* ================= BADGES ================= */
+function renderBadgesPage(){
+  setPageTitle('Badges','הישגי התחרות');
+  callServer('getBadgeDefinitions').then(function(defs){
+    document.getElementById('view-root').innerHTML = '<div class="badge-grid">'+defs.map(renderBadgeTile).join('')+'</div>';
+  });
+}
+
+/* ================= HALL OF FAME ================= */
+function renderHofPage(){
+  setPageTitle('Hall of Fame','היסטוריית ניצחונות');
+  callServer('getHallOfFame').then(function(hof){
+    var html = '<div class="grid grid-4">'
+      + renderKpiCard('🔥','רצף הניצחונות הארוך ביותר', (hof.statistics.longestStreak.team||'—') + ' — ' + hof.statistics.longestStreak.length)
+      + renderKpiCard('💯','שיא נקודות שבועי', hof.statistics.topWeeklyScore)
+      + '</div>';
+
+    html += '<div class="section-title">📜 היסטוריית שבועות</div><div class="card">'
+      + (hof.history.length ? hof.history.map(function(h){
+          var teamsStr = h.winningTeams.map(function(w){ return '🏆 '+esc(w.name)+' ('+esc(w.division)+')'; }).join(' · ');
+          return '<div class="feed-item"><b style="width:90px;">'+h.weekId+'</b><span>'+teamsStr+' · 👑 '+esc(h.mvpAgent)+' · 🧑\u200d💼 '+esc(h.winningLeader)+'</span></div>';
+        }).join('') : emptyState('🏛','עדיין לא נסגר אף שבוע'))
+      + '</div>';
+
+    document.getElementById('view-root').innerHTML = html;
+  });
+}
+
+/* ================= ANALYTICS ================= */
+function renderAnalyticsPage(){
+  setPageTitle('Analytics','שבוע ' + APP.weekId);
+  callServer('getAnalytics', APP.weekId).then(function(a){
+    var html = '<div class="grid grid-3">'
+      + renderKpiCard('📞','אחוז שימור כללי', a.overallRetentionRate+'%')
+      + '</div>';
+    html += '<div class="grid grid-2" style="margin-top:16px;">'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">מגמה יומית</div><canvas id="anTrend" height="110"></canvas></div>'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">שימור לפי צוות</div><canvas id="anTeam" height="110"></canvas></div>'
+      + '</div>';
+    html += '<div class="grid grid-2" style="margin-top:16px;">'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">איכות לפי קטגוריה</div><canvas id="anCat" height="110"></canvas></div>'
+      + '<div class="card"><div style="font-weight:800; margin-bottom:10px;">סיבות נטישה נפוצות</div><canvas id="anReasons" height="110"></canvas></div>'
+      + '</div>';
+    document.getElementById('view-root').innerHTML = html;
+
+    drawLineChart('anTrend', a.dailyTrend.map(function(d){return d.date;}), [{label:'בדיקות', data:a.dailyTrend.map(function(d){return d.calls;}), color:'#0EA5C4'}]);
+    drawBarChart('anTeam', a.retentionsByTeam.map(function(t){return t.name;}), a.retentionsByTeam.map(function(t){return t.successRate;}));
+    drawBarChart('anCat', Object.keys(a.qualityByCategory), Object.values(a.qualityByCategory));
+    drawBarChart('anReasons', a.topLeaveReasons.map(function(r){return r.reason;}), a.topLeaveReasons.map(function(r){return r.count;}));
+  });
+}
+
+/* ================= ADMIN ================= */
+function renderAdminPage(){
+  setPageTitle('ניהול', 'אחמ"ש / Admin');
+  var tab = APP._adminTab || (APP.user.role==='SHIFT_MANAGER' ? 'competition' : 'overview');
+  var tabs = [['competition','🏆 ניהול תחרות'],['review','🎧 ניקוד מהיר'],['overview','סקירה'],['wrapup','🏁 סיכום לפני סגירה'],['users','משתמשים ו-PIN'],['config','הגדרות'],['audit','Audit Log']];
+  var html = '<div class="toggle-group" style="max-width:760px; margin-bottom:18px; flex-wrap:wrap;">'
+    + tabs.map(function(t){ return '<button class="toggle-btn'+(tab===t[0]?' selected yes':'')+'" onclick="switchAdminTab(\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')
+    + '</div><div id="admin-content">'+skeleton('100%','300px')+'</div>';
+  document.getElementById('view-root').innerHTML = html;
+  if(tab==='competition') renderCompetitionManagement();
+  else if(tab==='overview') renderAdminOverview();
+  else if(tab==='review') renderCallReviewForm();
+  else if(tab==='wrapup') renderWeeklyWrapUp();
+  else if(tab==='users') renderAdminUsers();
+  else if(tab==='config') renderAdminConfig();
+  else renderAuditLog();
+}
+function switchAdminTab(tab){ APP._adminTab = tab; renderAdminPage(); }
+
+/** מרכז שליטה למשמרת - "מה צריך לקרות עכשיו", לא CRUD כללי */
+function renderAdminOverview(){
+  Promise.all([
+    callServer('getAdminOverview', APP.authToken),
+    callServer('getTodaysReviewPlan', APP.authToken, APP.weekId),
+    callServer('getWeeklyCoverage', APP.authToken, APP.weekId),
+    callServer('getRotationExceptions', APP.authToken, APP.weekId)
+  ]).then(function(res){
+    var o = res[0], plan = res[1], coverage = res[2], exceptions = res[3];
+    var html = '<div class="grid grid-4">'
+      + renderKpiCard('📞','בדיקות השבוע', o.totalReviewsThisWeek)
+      + renderKpiCard('👥','נציגים פעילים', o.agentCount)
+      + renderKpiCard('🏳️','צוותים', o.teamCount)
+      + renderKpiCard('✅','משימות ממתינות', o.pendingManualTasks.length)
+      + '</div>';
+
+    html += '<div class="section-title">⚡ פעולות עיקריות</div>'
+      + '<div class="grid grid-3">'
+      + '<button class="btn primary" style="justify-content:center; padding:16px;" onclick="switchAdminTab(\'competition\')">🎧 הוסף בדיקת שיחה</button>'
+      + '<button class="btn" style="justify-content:center; padding:16px;" onclick="switchAdminTab(\'review\')">⚡ ניקוד מהיר</button>'
+      + '<button class="btn" style="justify-content:center; padding:16px;" onclick="switchAdminTab(\'wrapup\')">🏁 סיכום לפני סגירת שבוע</button>'
+      + '</div>';
+
+    // "מי הבא בתור" - הסבב המאוזן קובע, לא האחמ"ש. זה מחליף חיפוש ידני ברשימת עובדים.
+    html += '<div class="section-title">📋 מי בתור לביקורת (הסבב המאוזן)</div>';
+    html += '<div class="grid grid-2">' + plan.map(function(t){
+      var rows = t.nextAgents.length
+        ? t.nextAgents.map(function(a){
+            var statusLabel = a.roundStatus==='IN_PROGRESS' ? ' (חסרה שיחה 2/2)' : (a.roundStatus==='DEFERRED' ? ' (נדחה קודם)' : '');
+            return '<div class="feed-item"><span>'+esc(a.name)+statusLabel+'</span>'
+              + '<button class="btn sm primary" onclick="renderCompetitionAgentDetail('+aj(a.agentId)+')">התחל ביקורת</button></div>';
+          }).join('')
+        : emptyState('✅','כל הצוות כוסה השבוע');
+      return '<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
+        + '<b>'+esc(t.teamName)+'</b><span class="kpi-sub">כיסוי '+t.coveragePercent+'% ('+t.completedCount+'/'+t.eligibleCount+')</span></div>'
+        + rows + '</div>';
+    }).join('') + '</div>';
+
+    // כיסוי שבועי לפי מוקד
+    html += '<div class="section-title">📊 כיסוי שבועי לפי מוקד</div><div class="grid grid-2">'
+      + coverage.map(function(d){
+          return renderKpiCard('📊', 'כיסוי — '+d.division, d.coveragePercent+'%', d.completedCount+' מתוך '+d.eligibleCount+' נציגים');
+        }).join('') + '</div>';
+
+    if(exceptions.length){
+      html += '<div class="section-title">⚠️ דורש תשומת לב<span class="tag">'+exceptions.length+'</span></div>';
+      html += '<div class="card">' + exceptions.map(function(e){ return renderAlert(e); }).join('') + '</div>';
+    }
+
+    if(o.leadingTeamsByDivision && o.leadingTeamsByDivision.length){
+      html += '<div class="section-title">🏆 מובילים כרגע</div><div class="grid grid-2">'
+        + o.leadingTeamsByDivision.map(function(e){
+            return renderKpiCard('🏆', 'מוביל/ה — '+e.division, e.team?e.team.name:'—', e.team?(e.team.score+' נק׳'):'');
+          }).join('') + '</div>';
+    }
+
+    html += '<div class="section-title">🕒 בדיקות אחרונות</div><div class="card">'
+      + (o.recentReviews.length ? o.recentReviews.map(function(r){
+          return '<div class="feed-item"><span>'+r.date+' '+r.time+'</span><span>איכות: '+r.qualityScore+' · '+(r.retentionSuccess==='כן'?'✅ שימור':'❌ ללא שימור')+'</span></div>';
+        }).join('') : emptyState('📞','אין בדיקות עדיין'))
+      + '</div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+
+/* ---- Weekly Wrap-Up: הצעד המחייב לפני סגירת שבוע ---- */
+function renderWeeklyWrapUp(){
+  document.getElementById('admin-content').innerHTML = skeleton('100%','300px');
+  callServer('getWeeklyWrapUp', APP.authToken).then(function(w){
+    if(w.alreadyClosed){
+      document.getElementById('admin-content').innerHTML = '<div class="alert success">✅ השבוע '+w.weekId+' כבר נסגר. עברו לשבוע הבא דרך בורר השבועות למעלה כדי לראות תוצאות.</div>';
+      return;
+    }
+    var html = '<div class="card" style="margin-bottom:16px;">'
+      + '<div style="font-weight:800; font-size:16px; margin-bottom:10px;">סיכום שבוע '+w.weekId+' לפני סגירה</div>'
+      + '<div class="grid grid-3">'
+      + renderKpiCard('📞','סה"כ בדיקות', w.totalReviewCount)
+      + renderKpiCard('👥','נציגים שנבדקו', w.participatingAgentCount)
+      + renderKpiCard('🏳️','צוותים משתתפים', w.participatingTeamCount)
+      + '</div></div>';
+
+    if(w.warnings.length){
+      html += '<div class="section-title">⚠️ דורש תשומת לב לפני סגירה</div>';
+      html += w.warnings.map(function(msg){ return '<div class="alert warning">⚠️ '+esc(msg)+'</div>'; }).join('');
+    }
+
+    html += '<div class="section-title">🏆 מנצחים צפויים לפי מוקד</div><div class="grid grid-2">';
+    w.divisionsSummary.forEach(function(d){
+      html += '<div class="card'+(d.tied?' rank-1':'')+'">'
+        + '<div style="font-weight:800;">'+esc(d.division)+(d.tied?' <span style="color:var(--warning); font-size:12px;">⚠️ תיקו</span>':'')+'</div>'
+        + (d.winner ? ('<div class="score-big" style="margin:8px 0;">'+esc(d.winner.name)+'</div><div class="kpi-sub">Score '+d.winner.score
+            + (d.runnerUp ? (' · יתרון '+d.margin+' נק׳ על '+esc(d.runnerUp.name)) : '') + '</div>')
+          : emptyState('👥','אין נתונים'))
+        + '</div>';
+    });
+    html += '</div>';
+
+    if(w.topAgent){
+      html += '<div class="section-title">👑 נציג/ה מוביל/ה</div><div class="card">'
+        + esc(w.topAgent.name) + ' — ' + w.topAgent.points + ' נק׳' + (w.topAgentTied ? ' <span style="color:var(--warning);">⚠️ תיקו</span>' : '')
+        + '</div>';
+    }
+
+    html += '<div class="section-title">⚙️ הגדרות ניקוד שיוקפאו לשבוע זה</div><div class="card">'
+      + Object.keys(w.scoringConfigPreview).map(function(k){
+          return '<div class="stat-row"><span>'+esc(k)+'</span><b>'+w.scoringConfigPreview[k]+'</b></div>';
+        }).join('')
+      + '</div>';
+
+    html += '<div class="alert warning" style="margin-top:18px;">🔒 לאחר הסגירה, התוצאה של השבוע הזה תוקפא לצמיתות. שינוי הגדרות ניקוד בעתיד לא ישנה את הזוכים או הדירוג של השבוע הזה.</div>';
+    html += '<button class="btn danger" style="width:100%; margin-top:12px;" onclick="openCloseWeekConfirm('+aj(w.weekId)+')">🏁 המשך לאישור סגירת שבוע</button>';
+
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+
+/** אישור מכוון: המנהל חייב להקליד את מזהה השבוע במדויק כדי לאפשר את כפתור הסגירה - מונע סגירה בטעות בלחיצה אחת */
+function openCloseWeekConfirm(weekId){
+  var html = '<div class="modal-title">אישור סגירת שבוע '+esc(weekId)+'</div>'
+    + '<div class="alert danger" style="margin-bottom:14px;">פעולה זו סופית ולא ניתנת לביטול. התוצאה תוקפא לצמיתות.</div>'
+    + '<div class="field"><label>הקלד/י בדיוק: <b>סגור את שבוע '+esc(weekId)+'</b></label><input type="text" id="close-week-confirm-input" placeholder="סגור את שבוע '+esc(weekId)+'"></div>'
+    + '<div id="close-week-error" style="color:var(--danger); font-size:12.5px; margin-bottom:10px;"></div>'
+    + '<div style="display:flex; gap:10px;">'
+    + '<button class="btn danger" id="close-week-confirm-btn" disabled onclick="doCloseWeek()">כן, סגור את השבוע לצמיתות</button>'
+    + '<button class="btn" onclick="closeModal()">ביטול</button></div>';
+  openModal(html);
+  var expected = 'סגור את שבוע ' + weekId;
+  document.getElementById('close-week-confirm-input').addEventListener('input', function(e){
+    document.getElementById('close-week-confirm-btn').disabled = (e.target.value.trim() !== expected);
+  });
+}
+function doCloseWeek(){
+  var btn = document.getElementById('close-week-confirm-btn');
+  if(btn) btn.disabled = true;
+  callServer('closeCurrentWeek', APP.authToken).then(function(res){
+    closeModal();
+    var winners = (res.snapshot && res.snapshot.winningTeamsByDivision) || [];
+    var winnersText = winners.map(function(w){ return w.teamName+' ('+w.division+')'; }).join(' · ');
+    toast('השבוע '+res.closedWeekId+' נסגר בהצלחה. זוכים: '+winnersText, 'success');
+    loadWeeks().then(renderCurrentRoute);
+  }).catch(function(e){
+    var errEl = document.getElementById('close-week-error');
+    if(errEl) errEl.textContent = e.message; else toast(e.message,'error');
+    if(btn) btn.disabled = false;
+  });
+}
+
+/* ---- Call review form ---- */
+var REVIEW_CATEGORIES = [
+  ['Tashaul','תשאול נכון'], ['HatamatHatzaa','הצעה מותאמת ללקוח'], ['EichutSherut','שירות איכותי']
+];
+
+/**
+ * בונה את טופס ניקוד השיחה לתוך containerId. ctx.mode='dropdown' (בחירת נציג
+ * חופשית + כפתור רנדומלי, לטאב "ניקוד שיחה מהיר") או ctx.mode='fixed'
+ * (נציג כבר נבחר מראש דרך אשף "ניהול תחרות" - מוקד/צוות/נציג). שני המצבים
+ * חולקים בדיוק את אותה לוגיקת שמירה, כדי שלא ייווצר פיצול בין שני מסכים.
+ */
+function renderCallScoreForm(containerId, ctx){
+  Promise.all([callServer('getLeaveReasons'), callServer('getOffers')]).then(function(res){
+    var reasons = res[0], offers = res[1];
+    var agentFieldHtml;
+    if(ctx.mode==='fixed'){
+      agentFieldHtml = '<div class="field"><label>נציג</label><div class="badge-chip" style="font-size:14px; padding:9px 16px;">👤 '+esc(ctx.agentName)+'</div></div>';
+    } else {
+      window._reviewAgents = ctx.agents;
+      agentFieldHtml = '<div class="field"><label>נציג</label><div style="display:flex; gap:8px;">'
+        + '<select id="rf-agent" style="flex:1;">'+ctx.agents.map(function(a){return '<option value="'+a.agentId+'">'+esc(a.name)+'</option>';}).join('')+'</select>'
+        + '<button type="button" class="btn sm" onclick="pickRandomAgent()">🎲 רנדומלי</button></div></div>';
+    }
+
+    var html = '<div class="card" style="max-width:640px;">'
+      + '<div class="alert warning" style="margin-bottom:16px;">🎧 האזן/י לשיחה של הנציג, ודרג/י אותה לפי הקריטריונים למטה. הניקוד משוקלל אוטומטית לציון השיחה, לניקוד הנציג השבועי, ולניקוד הצוות.</div>'
+      + agentFieldHtml
+      + '<div class="field"><label>מספר לקוח</label><input type="text" id="rf-customer" placeholder="מספר טלפון / מזהה לקוח שאיתו התנהלה השיחה"></div>'
+      + '<div class="grid grid-2"><div class="field"><label>תאריך</label><input type="date" id="rf-date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+      + '<div class="field"><label>שעה</label><input type="text" id="rf-time" value="'+new Date().toTimeString().slice(0,5)+'"></div></div>';
+
+    REVIEW_CATEGORIES.forEach(function(c){
+      html += '<div class="field"><label>'+c[1]+'</label><div class="score-slider-row">'
+        + '<input type="range" min="0" max="10" value="7" id="rf-'+c[0]+'" oninput="document.getElementById(\'val-'+c[0]+'\').textContent=this.value">'
+        + '<span class="score-val" id="val-'+c[0]+'">7</span></div></div>';
+    });
+
+    html += '<div class="field"><label>שימור מוצלח?</label><div class="toggle-group" id="rf-success">'
+      + '<button type="button" class="toggle-btn selected yes" data-val="כן" onclick="pickToggle(\'rf-success\',this)">כן</button>'
+      + '<button type="button" class="toggle-btn" data-val="לא" onclick="pickToggle(\'rf-success\',this)">לא</button></div></div>';
+
+    html += '<div class="section-title" style="margin-top:22px; margin-bottom:10px; font-size:13px; color:var(--text-secondary);">פרטים נוספים (אופציונלי)</div>';
+    html += '<div class="field"><label>סיבת נטישה</label><select id="rf-reason">'+reasons.map(function(r){return '<option>'+esc(r)+'</option>';}).join('')+'</select></div>';
+    html += '<div class="field"><label>הצעה שניתנה</label><select id="rf-offer">'+offers.map(function(o){return '<option>'+esc(o)+'</option>';}).join('')+'</select></div>';
+
+    html += '<div class="field"><label>בונוס שיחה מצטיינת</label><div class="toggle-group" id="rf-bonus">'
+      + '<button type="button" class="toggle-btn" data-val="כן" onclick="pickToggle(\'rf-bonus\',this)">כן</button>'
+      + '<button type="button" class="toggle-btn selected no" data-val="לא" onclick="pickToggle(\'rf-bonus\',this)">לא</button></div></div>';
+
+    html += '<div class="field"><label>הערת אחמ"ש (פנימי - לא מוצג לנציג)</label><textarea id="rf-note"></textarea></div>';
+    html += '<button class="btn primary" onclick="submitCallScoreForm('+aj(containerId)+', '+aj(ctx.mode==='fixed'?ctx.agentId:null)+')">שמור שיחה מתועדת</button>';
+    html += '</div>';
+    document.getElementById(containerId).innerHTML = html;
+  });
+}
+function pickRandomAgent(){
+  var agents = window._reviewAgents || [];
+  if(!agents.length) return;
+  var pick = agents[Math.floor(Math.random()*agents.length)];
+  document.getElementById('rf-agent').value = pick.agentId;
+  toast('נבחר/ה באקראי: '+pick.name, 'success');
+}
+function pickToggle(groupId, btn){
+  var group = document.getElementById(groupId);
+  group.querySelectorAll('.toggle-btn').forEach(function(b){ b.classList.remove('selected','yes','no'); });
+  btn.classList.add('selected', btn.getAttribute('data-val')==='כן' ? 'yes':'no');
+}
+function submitCallScoreForm(containerId, fixedAgentId){
+  var data = buildScoreFormData(fixedAgentId);
+  window._pendingScoreSubmit = { containerId: containerId, fixedAgentId: fixedAgentId, data: data };
+  callServer('saveCallReview', APP.authToken, data).then(handleSaveCallReviewResult).catch(function(e){ toast(e.message || 'לא הצלחנו לשמור את הנתונים', 'error'); });
+}
+function buildScoreFormData(fixedAgentId){
+  var data = {
+    agentId: fixedAgentId || document.getElementById('rf-agent').value,
+    customerNumber: document.getElementById('rf-customer').value,
+    date: document.getElementById('rf-date').value,
+    time: document.getElementById('rf-time').value
+  };
+  REVIEW_CATEGORIES.forEach(function(c){ data[c[0]] = document.getElementById('rf-'+c[0]).value; });
+  data.retentionSuccess = document.querySelector('#rf-success .selected').getAttribute('data-val');
+  data.leaveReason = document.getElementById('rf-reason').value;
+  data.offerGiven = document.getElementById('rf-offer').value;
+  data.excellentCallBonus = document.querySelector('#rf-bonus .selected').getAttribute('data-val') === 'כן';
+  data.reviewerNote = document.getElementById('rf-note').value;
+  return data;
+}
+/** תוצאת שמירה: או שנשמר בהצלחה, או שהשרת מחזיר חשד לכפילות שדורש החלטה מפורשת */
+function handleSaveCallReviewResult(res){
+  if(res && res.duplicateWarning){
+    openDuplicateWarningModal(res.existing);
+    return;
+  }
+  if(res && res.alreadyCompletedWarning){
+    openAlreadyCompletedModal(res.message);
+    return;
+  }
+  var roundMsg = '';
+  if(res.reviewPurpose==='COMPETITION' && res.callsCompletedInRound){
+    roundMsg = res.roundStatus==='COMPLETE' ? ' — ✓ סבב התחרות השבועי הושלם!' : ' — 1/2 שיחות בסבב, נותרה עוד שיחה אחת';
+  }
+  toast('השיחה נשמרה — ציון איכות: '+res.qualityScore+roundMsg, 'success');
+  var pending = window._pendingScoreSubmit || {};
+  if(pending.fixedAgentId){ renderCompetitionAgentDetail(pending.fixedAgentId); }
+  else { renderCallReviewForm(); }
+}
+function openAlreadyCompletedModal(message){
+  var pending = window._pendingScoreSubmit || {};
+  var html = '<div class="modal-title">✓ סבב התחרות כבר הושלם</div>'
+    + '<div class="alert success" style="margin-bottom:14px; white-space:pre-line;">'+esc(message)+'</div>'
+    + '<div style="display:flex; gap:10px;">'
+    + '<button class="btn" onclick="closeModal()">חזור</button>'
+    + '<button class="btn primary" onclick="resubmitAsQA()">שמור כ-QA / Coaching</button>'
+    + '</div>';
+  openModal(html);
+}
+function resubmitAsQA(){
+  var pending = window._pendingScoreSubmit;
+  if(!pending) { closeModal(); return; }
+  pending.data.reviewPurpose = 'QA';
+  callServer('saveCallReview', APP.authToken, pending.data).then(function(res){
+    closeModal();
+    toast('נשמר כ-QA — לא משפיע על ניקוד התחרות', 'success');
+    if(pending.fixedAgentId){ renderCompetitionAgentDetail(pending.fixedAgentId); }
+    else { renderCallReviewForm(); }
+  }).catch(function(e){ toast(e.message,'error'); });
+}
+function openDuplicateWarningModal(existing){
+  var html = '<div class="modal-title">⚠️ יש כבר בדיקה דומה השבוע</div>'
+    + '<div class="alert warning" style="margin-bottom:14px;">נמצאה בדיקה קיימת לאותו נציג ואותו מספר לקוח, באותו שבוע. ייתכן שזו הזנה כפולה של אותה שיחה — ודא/י שזו באמת שיחה אחרת לפני שממשיכים.</div>'
+    + '<div class="card" style="margin-bottom:16px;">'
+    + '<div class="stat-row"><span>תאריך ושעה</span><b>'+esc(existing.date)+' · '+esc(existing.time)+'</b></div>'
+    + '<div class="stat-row"><span>נבדק/ה ע"י</span><b>'+esc(existing.reviewerName)+'</b></div>'
+    + '<div class="stat-row"><span>מספר לקוח</span><b>'+esc(existing.customerNumber)+'</b></div>'
+    + '<div class="stat-row"><span>ציון איכות</span><b>'+existing.qualityScore+'</b></div>'
+    + '</div>'
+    + '<div style="display:flex; gap:10px;">'
+    + '<button class="btn" onclick="closeModal()">חזור לבדיקה</button>'
+    + '<button class="btn danger" onclick="confirmDuplicateSave()">שמור בכל זאת — זו שיחה אחרת</button>'
+    + '</div>';
+  openModal(html);
+}
+function confirmDuplicateSave(){
+  var pending = window._pendingScoreSubmit;
+  if(!pending) { closeModal(); return; }
+  pending.data.confirmDuplicate = true;
+  callServer('saveCallReview', APP.authToken, pending.data).then(function(res){
+    closeModal();
+    handleSaveCallReviewResult(res);
+  }).catch(function(e){ toast(e.message || 'לא הצלחנו לשמור את הנתונים', 'error'); });
+}
+
+/* ---- Quick score tab (flat agent dropdown, unchanged UX) ---- */
+function renderCallReviewForm(){
+  callServer('getLeaderboard','AGENT',APP.weekId).then(function(agents){
+    renderCallScoreForm('admin-content', { mode:'dropdown', agents: agents });
+  });
+}
+
+/* ================= ניהול תחרות: מוקד → צוות → נציג ================= */
+var COMP = { division:null, teamId:null, teamName:null };
+
+function renderCompetitionManagement(){
+  COMP = { division:null, teamId:null, teamName:null };
+  callServer('getDivisions').then(function(divisions){
+    var html = '<div class="card" style="max-width:640px;">'
+      + '<button class="btn primary" style="width:100%; margin-bottom:16px;" onclick="pickRandomCompetitionAgent()">🎲 שיחה רנדומלית (מכל המוקדים)</button>'
+      + '<div class="wizard-step-title">בחר/י מוקד</div>'
+      + divisions.map(function(d){ return '<button class="wizard-choice" onclick="compSelectDivision('+aj(d)+')"><div class="wc-title">'+esc(d)+'</div></button>'; }).join('')
+      + '</div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+function compSelectDivision(division){
+  COMP.division = division;
+  callServer('getTeamsByDivision', division).then(function(teams){
+    var html = '<div class="card" style="max-width:640px;">'
+      + '<div class="wizard-back" onclick="renderCompetitionManagement()">→ חזרה למוקדים</div>'
+      + '<div class="wizard-step-title">צוותים ב'+esc(division)+'</div>'
+      + teams.map(function(t){ return '<button class="wizard-choice" onclick="compSelectTeam('+aj(t.teamId)+', '+aj(t.name)+')"><div class="wc-title">'+esc(t.name)+'</div></button>'; }).join('')
+      + '</div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+function compSelectTeam(teamId, teamName){
+  COMP.teamId = teamId; COMP.teamName = teamName;
+  callServer('getAgentsForTeam', APP.authToken, teamId).then(function(agents){
+    var html = '<div class="card" style="max-width:640px;">'
+      + '<div class="wizard-back" onclick="compSelectDivision('+aj(COMP.division)+')">→ חזרה לצוותים</div>'
+      + '<div class="wizard-step-title">נציגי '+esc(teamName)+'</div>'
+      + (agents.length ? agents.map(function(a){ return '<button class="wizard-choice" onclick="renderCompetitionAgentDetail('+aj(a.agentId)+')"><div class="wc-title">'+esc(a.name)+'</div></button>'; }).join('') : emptyState('👤','אין נציגים בצוות זה'))
+      + '</div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+function pickRandomCompetitionAgent(){
+  callServer('getLeaderboard','AGENT',APP.weekId).then(function(agents){
+    if(!agents.length){ toast('אין נציגים במערכת','error'); return; }
+    var pick = agents[Math.floor(Math.random()*agents.length)];
+    renderCompetitionAgentDetail(pick.agentId);
+  });
+}
+/** מסך נציג בתוך "ניהול תחרות": היסטוריית שיחות מתועדות + הוספת שיחה חדשה */
+function openDeferAgentModal(agentId, teamId, agentName){
+  var html = '<div class="modal-title">🚫 סמן/י את '+esc(agentName)+' כלא זמין/ה</div>'
+    + '<div class="kpi-sub" style="margin-bottom:14px;">הביקורת תישאר פתוחה ותחזור לתור הממתינים - לא נספרת כהשלמה, ולא "נעלמת" מהשבוע.</div>'
+    + '<div class="field"><label>סיבה (אופציונלי)</label><input type="text" id="defer-reason-input" placeholder="חופש / מחלה / לא זמין"></div>'
+    + '<div style="display:flex; gap:10px;">'
+    + '<button class="btn" onclick="closeModal()">ביטול</button>'
+    + '<button class="btn danger" onclick="submitDeferAgent('+aj(agentId)+', '+aj(teamId)+')">אשר/י אי-זמינות</button>'
+    + '</div>';
+  openModal(html);
+}
+function submitDeferAgent(agentId, teamId){
+  var reason = document.getElementById('defer-reason-input').value;
+  callServer('deferAgentRound', APP.authToken, APP.weekId, teamId, agentId, reason).then(function(){
+    closeModal();
+    toast('הנציג/ה סומן/ה כלא זמין/ה, יחזור לתור השבוע', 'success');
+    renderAdminOverview();
+  }).catch(function(e){ toast(e.message,'error'); });
+}
+
+function renderCompetitionAgentDetail(agentId){
+  document.getElementById('admin-content').innerHTML = skeleton('100%','200px');
+  Promise.all([callServer('getAgentProfile', APP.authToken, agentId, APP.weekId), callServer('getAgentReviewHistory', APP.authToken, agentId, APP.weekId)])
+    .then(function(res){
+      var agent = res[0], history = res[1];
+      var backFn = COMP.teamId ? ('compSelectTeam('+aj(COMP.teamId)+', '+aj(COMP.teamName)+')') : 'renderCompetitionManagement()';
+      var lastReview = history[0];
+      var html = '<div class="wizard-back" onclick="'+backFn+'">→ חזרה</div>';
+      html += '<div class="card" style="margin-bottom:16px;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">'
+        + '<div><div style="font-weight:800; font-size:16px;">👤 '+esc(agent.name)+'</div><div class="kpi-sub">'+esc(agent.teamName)+' · מקום #'+(agent.rank||'—')+'</div></div>'
+        + '<button class="btn primary" onclick="renderCallScoreForm(\'comp-score-form\', {mode:\'fixed\', agentId:'+aj(agentId)+', agentName:'+aj(agent.name)+'})">➕ הוסף שיחה מתועדת</button>'
+        + '<button class="btn" onclick="openDeferAgentModal('+aj(agentId)+', '+aj(agent.teamId)+', '+aj(agent.name)+')">🚫 לא זמין/ה היום</button>'
+        + '</div>'
+        + '<div class="grid grid-4">'
+        + renderKpiCard('📞','שיחות השבוע', history.length)
+        + renderKpiCard('⭐','איכות ממוצעת', agent.stats.avgQuality)
+        + renderKpiCard('🎯','אחוז הצלחה', agent.stats.successRate+'%')
+        + renderKpiCard('🕒','בדיקה אחרונה', lastReview ? (lastReview.date+' '+lastReview.time) : 'אין')
+        + '</div></div>';
+      html += '<div id="comp-score-form"></div>';
+      html += '<div class="section-title">📞 שיחות שתועדו השבוע</div>';
+      html += history.length ? history.map(renderDocumentedCallCard).join('') : emptyState('📞','עדיין לא תועדו שיחות לנציג זה השבוע');
+      document.getElementById('admin-content').innerHTML = html;
+    });
+}
+
+/* ================= השיחות שלי (נציג) ================= */
+function renderMyCallsPage(){
+  setPageTitle('השיחות שלי', 'שיחות שתועדו ונבדקו · שבוע ' + APP.weekId);
+  callServer('getAgentReviewHistory', APP.authToken, APP.user.userId, APP.weekId).then(function(history){
+    var html = history.length ? history.map(renderDocumentedCallCard).join('') : emptyState('📞','עדיין לא תועדו לך שיחות השבוע');
+    document.getElementById('view-root').innerHTML = html;
+  }).catch(showLoadError);
+}
+function renderDocumentedCallCard(call){
+  var catRows = Object.keys(call.categories).map(function(k){
+    var c = call.categories[k];
+    return '<div class="stat-row"><span>'+esc(c.label)+'</span><b>'+c.value+'/10</b></div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">'
+    + '<div><div style="font-weight:800;">'+call.date+' · '+call.time+'</div><div class="kpi-sub">נבדק/ה ע"י: '+esc(call.reviewerName)+' · לקוח: '+esc(call.customerNumber||'—')+'</div></div>'
+    + '<div class="score-big" style="font-size:22px;">'+call.qualityScore+'</div>'
+    + '</div>'
+    + '<div style="margin-top:10px;">'+catRows+'</div>'
+    + '<div class="stat-row"><span>שימור מוצלח</span><b>'+(call.retentionSuccess==='כן'?'✅ כן':'❌ לא')+'</b></div>'
+    + (call.excellentCallBonus==='כן' ? '<div class="pill done" style="margin-top:8px;">⭐ בונוס שיחה מצטיינת</div>' : '')
+    + (call.reviewerNote ? '<div class="field" style="margin-top:12px;"><label>הערת אחמ"ש</label><div style="font-size:13px; color:var(--text-secondary);">'+esc(call.reviewerNote)+'</div></div>' : '')
+    + '</div>';
+}
+
+/* ---- Users / PIN management tab ---- */
+function renderAdminUsers(){
+  var roleLabels = {ADMIN:'מנהל מערכת', SHIFT_MANAGER:'אחמ"ש', TEAM_LEADER:'ראש צוות', AGENT:'נציג', VIEWER:'צפייה'};
+  callServer('getAllUsersForAdmin', APP.authToken).then(function(users){
+    var html = '<div class="card">'
+      + '<div class="alert warning">⚠️ קוד PIN הוא הדבר היחיד שמונע מנציג להיכנס בתור אחמ"ש/ראש צוות. יש לוודא שכל משתמש מחליף את קוד ברירת המחדל (1234) בכניסה הראשונה, ולאפס קוד מייד אם יש חשד שנחשף.</div>'
+      + users.map(function(u){
+          return '<div class="feed-item"><span><b>'+esc(u.name)+'</b> — '+(roleLabels[u.role]||u.role)+(u.claimed?'':' · <span style="color:var(--warning);">טרם נרשם</span>')+'</span>'
+            + '<button class="btn sm" onclick="openResetPinModal(\''+u.userId+'\', '+aj(u.name)+')">איפוס PIN</button></div>';
+        }).join('')
+      + '</div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+function openResetPinModal(userId, name){
+  var html = '<div class="modal-title">איפוס קוד PIN — '+esc(name)+'</div>'
+    + '<div class="field"><label>קוד PIN חדש (לפחות 4 ספרות)</label><input type="text" inputmode="numeric" id="reset-pin-input"></div>'
+    + '<div id="reset-pin-error" style="color:var(--danger); font-size:12.5px; margin-bottom:10px;"></div>'
+    + '<button class="btn primary" style="width:100%;" onclick="submitResetPin(\''+userId+'\')">עדכן קוד</button>';
+  openModal(html);
+}
+function submitResetPin(userId){
+  var newPin = document.getElementById('reset-pin-input').value;
+  callServer('setUserPin', APP.authToken, userId, newPin).then(function(){
+    closeModal(); toast('קוד ה-PIN אופס בהצלחה', 'success');
+  }).catch(function(err){ document.getElementById('reset-pin-error').textContent = err.message; });
+}
+
+/* ---- Config tab ---- */
+function renderAdminConfig(){
+  callServer('getAdminConfig', APP.authToken).then(function(cfg){
+    var html = '<div class="card" style="max-width:640px;">';
+    Object.keys(cfg).forEach(function(k){
+      html += '<div class="field"><label>'+k+'</label><input type="text" id="cfg-'+k+'" value="'+esc(cfg[k])+'"></div>';
+    });
+    html += '<button class="btn primary" onclick="saveConfig()">שמור הגדרות</button></div>';
+    document.getElementById('admin-content').innerHTML = html;
+  });
+}
+function saveConfig(){
+  callServer('getAdminConfig', APP.authToken).then(function(cfg){
+    var updates = {};
+    Object.keys(cfg).forEach(function(k){
+      var el = document.getElementById('cfg-'+k);
+      if(el) updates[k] = isNaN(el.value) ? el.value : Number(el.value);
+    });
+    callServer('updateConfigValues', APP.authToken, updates).then(function(){
+      toast('ההגדרות עודכנו בהצלחה', 'success');
+    }).catch(function(e){ toast(e.message,'error'); });
+  });
+}
+
+/* ---- Audit log tab ---- */
+var SCORE_AFFECTING_ACTIONS = ['הזנת בדיקת שיחה','עריכת בדיקת שיחה','ביטול בדיקת שיחה','אישור שמירה למרות התראת כפילות','מתן בונוס','עדכון הגדרות מערכת','סגירת שבוע'];
+function renderAuditLog(){
+  APP._auditFilters = APP._auditFilters || { entityType:'', userName:'', search:'' };
+  callServer('getAuditLogFilterOptions', APP.authToken).then(function(opts){
+    var html = '<div class="card" style="margin-bottom:14px;"><div class="grid grid-3">'
+      + '<div class="field" style="margin-bottom:0;"><label>סוג ישות</label><select id="audit-f-entity"><option value="">הכל</option>'+opts.entityTypes.map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('')+'</select></div>'
+      + '<div class="field" style="margin-bottom:0;"><label>משתמש</label><select id="audit-f-user"><option value="">הכל</option>'+opts.userNames.map(function(u){return '<option value="'+esc(u)+'">'+esc(u)+'</option>';}).join('')+'</select></div>'
+      + '<div class="field" style="margin-bottom:0;"><label>חיפוש חופשי</label><input type="text" id="audit-f-search" placeholder="פעולה / מזהה..."></div>'
+      + '</div><button class="btn primary sm" style="margin-top:12px;" onclick="applyAuditFilters()">סנן</button></div>'
+      + '<div id="audit-log-list">'+skeleton('100%','200px')+'</div>';
+    document.getElementById('admin-content').innerHTML = html;
+    loadAuditLogList();
+  });
+}
+function applyAuditFilters(){
+  APP._auditFilters = {
+    entityType: document.getElementById('audit-f-entity').value,
+    userName: document.getElementById('audit-f-user').value,
+    search: document.getElementById('audit-f-search').value
+  };
+  loadAuditLogList();
+}
+function loadAuditLogList(){
+  callServer('getAuditLog', APP.authToken, APP._auditFilters, 100).then(function(logs){
+    var html = '<div class="card">' + (logs.length ? logs.map(function(l){
+      var isScoreAffecting = SCORE_AFFECTING_ACTIONS.indexOf(l.Action) !== -1;
+      var badge = isScoreAffecting ? '<span class="pill failed" style="margin-right:6px;">משפיע על ניקוד</span>' : '';
+      var details = (l.OldValue || l.NewValue) ? ('<div style="margin-top:4px; font-size:11.5px; color:var(--text-secondary); word-break:break-all;">'
+        + (l.OldValue ? ('לפני: '+esc(String(l.OldValue).slice(0,200))+' ') : '') + (l.NewValue ? ('אחרי: '+esc(String(l.NewValue).slice(0,200))) : '') + '</div>') : '';
+      return '<div class="feed-item" style="display:block;"><div style="display:flex; justify-content:space-between; align-items:center;">'
+        + '<span class="feed-time">'+new Date(l.Timestamp).toLocaleString('he-IL')+'</span>'
+        + '<span>'+badge+'<b>'+esc(l.UserName)+'</b> — '+esc(l.Action)+' ('+esc(l.EntityType)+')</span></div>'+details+'</div>';
+    }).join('') : emptyState('📜','אין רישומים תואמים')) + (logs.length>=100?'<div class="kpi-sub" style="padding:10px;">מוצגות 100 התוצאות האחרונות - צמצם/י עם Filters לתוצאות ממוקדות יותר</div>':'') + '</div>';
+    document.getElementById('audit-log-list').innerHTML = html;
+  });
+}
+
+/* ================= Charts ================= */
+function drawLineChart(canvasId, labels, series){
+  var ctx = document.getElementById(canvasId); if(!ctx) return;
+  if(APP.chartInstances[canvasId]) APP.chartInstances[canvasId].destroy();
+  APP.chartInstances[canvasId] = new Chart(ctx, {
+    type:'line',
+    data:{ labels:labels, datasets: series.map(function(s){ return { label:s.label, data:s.data, borderColor:s.color, backgroundColor:s.color+'33', tension:.35, fill:true }; }) },
+    options: chartBaseOptions()
+  });
+}
+function drawBarChart(canvasId, labels, data){
+  var ctx = document.getElementById(canvasId); if(!ctx) return;
+  if(APP.chartInstances[canvasId]) APP.chartInstances[canvasId].destroy();
+  APP.chartInstances[canvasId] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:labels, datasets:[{ data:data, backgroundColor:'#0EA5C4', borderRadius:6 }] },
+    options: Object.assign(chartBaseOptions(), { plugins:{legend:{display:false}} })
+  });
+}
+function chartBaseOptions(){
+  return { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ labels:{ color:'#94A3B8' } } },
+    scales:{ x:{ ticks:{ color:'#94A3B8' }, grid:{ color:'rgba(148,163,184,.08)' } },
+             y:{ ticks:{ color:'#94A3B8' }, grid:{ color:'rgba(148,163,184,.08)' } } } };
+}
+
+/* ================= Polling (Live Feed) ================= */
+function startPolling(){
+  if(APP.pollTimer) clearInterval(APP.pollTimer);
+  APP.pollTimer = setInterval(function(){
+    if(APP.route !== 'dashboard') return;
+    callServer('getActivityFeed', APP.weekId, APP.lastFeedTimestamp, 10).then(function(events){
+      if(!events.length) return;
+      APP.lastFeedTimestamp = events[0].timestamp;
+      var box = document.getElementById('live-feed-box');
+      if(box){
+        var frag = events.map(function(e){ return renderFeedItem(e, true); }).join('');
+        box.innerHTML = frag + box.innerHTML;
+      }
+    });
+  }, 18000);
+}
+
+function showLoadError(err){
+  document.getElementById('view-root').innerHTML = emptyState('⚠️', err.message || 'לא הצלחנו לטעון את הנתונים');
+}
+
+/* ================= Global search ================= */
+var searchDebounce = null;
+document.addEventListener('DOMContentLoaded', function(){
+  var input = document.getElementById('global-search');
+  if(!input) return;
+  input.addEventListener('input', function(){
+    clearTimeout(searchDebounce);
+    var q = input.value.trim();
+    if(q.length < 2){ closeSearchResults(); return; }
+    searchDebounce = setTimeout(function(){ runGlobalSearch(q); }, 250);
+  });
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.search-box')) closeSearchResults();
+  });
+});
+function runGlobalSearch(q){
+  Promise.all([callServer('getLeaderboard','AGENT',APP.weekId), callServer('getLeaderboard','TEAM',APP.weekId)])
+    .then(function(res){
+      var agents = res[0].filter(function(a){ return a.name.indexOf(q) !== -1; }).slice(0,5);
+      var teams = res[1].filter(function(t){ return t.name.indexOf(q) !== -1; }).slice(0,5);
+      showSearchResults(agents, teams);
+    });
+}
+function showSearchResults(agents, teams){
+  var box = document.getElementById('search-results');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'search-results';
+    box.style.cssText = 'position:absolute; top:44px; right:0; width:260px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); z-index:120; overflow:hidden;';
+    document.querySelector('.search-box').style.position = 'relative';
+    document.querySelector('.search-box').appendChild(box);
+  }
+  var rows = [];
+  agents.forEach(function(a){ rows.push('<div class="feed-item" style="cursor:pointer; padding:9px 12px;" data-route="agent/'+a.agentId+'">👑 '+esc(a.name)+'</div>'); });
+  teams.forEach(function(t){ rows.push('<div class="feed-item" style="cursor:pointer; padding:9px 12px;" data-route="team/'+t.teamId+'">👥 '+esc(t.name)+'</div>'); });
+  box.innerHTML = rows.length ? rows.join('') : '<div style="padding:12px; color:var(--text-secondary); font-size:12.5px;">אין תוצאות</div>';
+  box.style.display = 'block';
+  box.querySelectorAll('[data-route]').forEach(function(el){
+    el.addEventListener('click', function(){ closeSearchResults(); document.getElementById('global-search').value=''; });
+  });
+}
+function closeSearchResults(){
+  var box = document.getElementById('search-results');
+  if(box) box.style.display = 'none';
+}
+</script>
+
