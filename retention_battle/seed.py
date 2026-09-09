@@ -19,7 +19,7 @@ def config():
 
 def init_db():
     db.setup_schema()
-    if db.rows("config"):
+    if db.rows("config") and db.rows("users") and db.rows("teams"):
         return
     defaults = {
         "Weight_Tashaul": 1,
@@ -94,4 +94,3 @@ def seed_reviews():
             "team_id": team["team_id"],
             "leader_id": team["team_leader_id"],
         })
-
