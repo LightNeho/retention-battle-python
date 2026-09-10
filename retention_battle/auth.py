@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import os
 import random
 import time
 
@@ -93,3 +94,15 @@ def set_user_pin(actor_token, target_user_id, new_pin):
     db.update("users", "user_id", target_user_id, {"pin_hash": hash_pin(new_pin), "claimed": 1})
     return {"success": True}
 
+
+def apply_one_time_pin_reset():
+    """Apply an operator-provided recovery PIN without exposing database credentials."""
+    user_id = os.environ.get("ONE_TIME_PIN_RESET_USER_ID")
+    new_pin = os.environ.get("ONE_TIME_PIN_RESET_VALUE")
+    if not user_id or not new_pin:
+        return
+    if len(new_pin) < 4 or len(new_pin) > 8 or not new_pin.isdigit():
+        raise RuntimeError("ONE_TIME_PIN_RESET_VALUE must contain 4-8 digits.")
+    if not db.one("users", "WHERE user_id=?", (user_id,)):
+        raise RuntimeError("The one-time PIN reset user was not found.")
+    db.update("users", "user_id", user_id, {"pin_hash": hash_pin(new_pin), "claimed": 1})
