@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import date, timedelta
 
 from . import db
 from .auth import change_own_pin, current_user, login, register_agent, require_role, set_user_pin
@@ -26,21 +27,27 @@ def _dashboard(week_id):
     agents = agent_leaderboard(week_id)
     teams = team_leaderboard(week_id)
     leaders = leader_leaderboard(week_id)
-    total_calls = sum(agent["callsReviewed"] for agent in agents)
-    total_retention = sum(agent["successfulRetentions"] for agent in agents)
+    today = date.today()
+    end_date = today + timedelta(days=6 - today.weekday())
+    leading_teams = []
+    for division in sorted({team["division"] for team in teams}):
+        leading_teams.append({
+            "division": division,
+            "team": next((team for team in teams if team["division"] == division and team["rank"] == 1), None),
+        })
     return {
         "weekId": week_id,
-        "topAgents": agents[:5],
-        "topTeams": teams[:5],
-        "topLeaders": leaders[:5],
-        "stats": {
-            "totalCalls": total_calls,
-            "totalRetentions": total_retention,
-            "retentionRate": round(total_retention / total_calls * 100, 1) if total_calls else 0,
-            "avgQuality": round(sum(agent["avgQuality"] for agent in agents) / (len(agents) or 1), 1),
-            "activeAgents": len(agents),
+        "weekMeta": {"weekId": week_id, "endDate": end_date.isoformat()},
+        "kpis": {
+            "leadingTeamsByDivision": leading_teams,
+            "topAgent": agents[0] if agents else None,
+            "leadingLeader": leaders[0] if leaders else None,
         },
-        "activity": get_activity_feed(week_id, None, 10),
+        "teamBattleByDivision": _team_battle_by_division(week_id),
+        "topAgents": agents[:5],
+        "agentLeaderboard": agents,
+        "leaderBattle": leaders,
+        "activityFeed": get_activity_feed(week_id, None, 10),
     }
 
 
