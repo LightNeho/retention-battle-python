@@ -1,5 +1,4 @@
 import random
-import os
 from datetime import date, datetime
 
 from . import db
@@ -20,7 +19,6 @@ def config():
 
 def init_db():
     db.setup_schema()
-    clear_agents_for_one_time_cleanup()
     if db.rows("config") and db.rows("users") and db.rows("teams"):
         return
     defaults = {
@@ -39,19 +37,6 @@ def init_db():
     for key, value in defaults.items():
         db.upsert_config(key, value)
     seed_demo()
-
-
-def clear_agents_for_one_time_cleanup():
-    if os.environ.get("ONE_TIME_AGENT_CLEANUP") != "CONFIRMED":
-        return
-    agent_ids = [user["user_id"] for user in db.rows("users", "WHERE role='AGENT'")]
-    for agent_id in agent_ids:
-        db.delete("review_appeals", "WHERE agent_id=?", (agent_id,))
-        db.delete("call_reviews", "WHERE agent_id=?", (agent_id,))
-        db.delete("badge_awards", "WHERE target_type='AGENT' AND target_id=?", (agent_id,))
-        db.delete("bonuses", "WHERE target_type='AGENT' AND target_id=?", (agent_id,))
-        db.delete("users", "WHERE user_id=?", (agent_id,))
-        db.delete("agents", "WHERE agent_id=?", (agent_id,))
 
 
 def seed_demo():
