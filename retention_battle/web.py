@@ -1,7 +1,6 @@
 from flask import Flask, jsonify, render_template, request
 
 from .api import dispatch
-from .auth import apply_one_time_pin_reset
 from .seed import init_db
 from .settings import validate_runtime_config
 
@@ -9,7 +8,6 @@ from .settings import validate_runtime_config
 def create_app():
     validate_runtime_config()
     init_db()
-    apply_one_time_pin_reset()
     app = Flask(__name__, template_folder="../templates")
 
     @app.route("/")
