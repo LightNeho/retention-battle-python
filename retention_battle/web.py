@@ -11,12 +11,13 @@ def create_app():
     app = Flask(__name__, template_folder="../templates")
 
     @app.route("/")
-    def index():
-        return render_template("index.html", tvMode=request.args.get("mode") == "tv")
-
     @app.route("/landing")
     def landing():
         return render_template("Landing.html")
+
+    @app.route("/app")
+    def index():
+        return render_template("index.html", tvMode=request.args.get("mode") == "tv")
 
     @app.route("/api/call", methods=["POST"])
     def api_call():
@@ -27,4 +28,3 @@ def create_app():
             return jsonify({"success": False, "error": str(exc)}), 400
 
     return app
-
