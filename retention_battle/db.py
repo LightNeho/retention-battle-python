@@ -104,6 +104,12 @@ def update(table, key_field, key_value, data):
         conn.execute(f"UPDATE {table} SET {assignments} WHERE {key_field}={placeholder()}", [data[k] for k in keys] + [key_value])
 
 
+def delete(table, where="", params=()):
+    where = _sql(where)
+    with connect() as conn:
+        conn.execute(f"DELETE FROM {table} {where}", params)
+
+
 def upsert_config(key, value):
     p = placeholder()
     with connect() as conn:
