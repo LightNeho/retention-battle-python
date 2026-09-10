@@ -194,16 +194,57 @@ function wizardSubmitLogin(agentId){
   });
 }
 
-/* ================= Legacy login (Admin / Team Leader / Shift Manager) ================= */
+/* ================= Management login ================= */
+var MANAGEMENT_USERS = [];
+var SHIFT_MANAGER_ORDER = ['נהוראי', 'סברין', 'שקד', 'משי', 'טליה'];
+
 function renderLegacyLogin(){
   callServer('getUsersForRoleSelection').then(function(users){
-    var roleLabels = {ADMIN:'מנהל מערכת', SHIFT_MANAGER:'אחמ"ש', TEAM_LEADER:'ראש צוות', AGENT:'נציג', VIEWER:'צפייה'};
-    var relevant = users.filter(function(u){ return u.role==='ADMIN' || u.role==='SHIFT_MANAGER' || u.role==='TEAM_LEADER'; });
-    var html = relevant.map(function(u){
-      return '<div class="user-option" onclick="promptForPin(\''+u.userId+'\', '+aj(u.name)+')">'
-        + '<span>'+esc(u.name)+'</span><span class="role-tag">'+(roleLabels[u.role]||u.role)+'</span></div>';
-    }).join('');
-    wizardShell(html || emptyState('👤','אין משתמשי ניהול במערכת'), true, 'renderWizardStart()');
+    MANAGEMENT_USERS = users;
+    wizardShell(
+      '<div class="wizard-step-title">כניסת ניהול / ראש צוות</div>'
+        + '<button class="wizard-choice" onclick="renderShiftManagerLogin()"><div class="wc-title">אחמ"שים</div><div class="wc-sub">בחירת אחמ"ש להתחברות</div></button>'
+        + '<button class="wizard-choice" onclick="renderTeamLeaderDivisionLogin()"><div class="wc-title">ראשי צוותים</div><div class="wc-sub">בחירת ראש צוות לפי מחלקה</div></button>',
+      true,
+      'renderWizardStart()'
+    );
+  });
+}
+
+function managementUserList(users, emptyMessage, backFn){
+  var roleLabels = {ADMIN:'מנהל מערכת', SHIFT_MANAGER:'אחמ"ש', TEAM_LEADER:'ראש צוות'};
+  var html = users.map(function(u){
+    return '<div class="user-option" onclick="promptForPin('+aj(u.userId)+', '+aj(u.name)+')">'
+      + '<span>'+esc(u.name)+'</span><span class="role-tag">'+(roleLabels[u.role]||u.role)+'</span></div>';
+  }).join('');
+  wizardShell(html || emptyState('👤', emptyMessage), true, backFn);
+}
+
+function renderShiftManagerLogin(){
+  var managers = MANAGEMENT_USERS.filter(function(u){ return u.role==='SHIFT_MANAGER'; });
+  managers.sort(function(a, b){
+    return SHIFT_MANAGER_ORDER.indexOf(a.name) - SHIFT_MANAGER_ORDER.indexOf(b.name);
+  });
+  managementUserList(managers, 'אין אחמ"שים במערכת', 'renderLegacyLogin()');
+}
+
+function renderTeamLeaderDivisionLogin(){
+  wizardShell(
+    '<div class="wizard-step-title">בחר/י מחלקה</div>'
+      + '<button class="wizard-choice" onclick="renderTeamLeaderLogin(\'שירות\')"><div class="wc-title">ראש צוות שירות</div></button>'
+      + '<button class="wizard-choice" onclick="renderTeamLeaderLogin(\'שימור\')"><div class="wc-title">ראש צוות שימור</div></button>',
+    true,
+    'renderLegacyLogin()'
+  );
+}
+
+function renderTeamLeaderLogin(division){
+  callServer('getTeamsByDivision', division).then(function(teams){
+    var teamIds = teams.map(function(team){ return team.teamId; });
+    var leaders = MANAGEMENT_USERS.filter(function(u){
+      return u.role==='TEAM_LEADER' && teamIds.indexOf(u.teamId)!==-1;
+    });
+    managementUserList(leaders, 'אין ראשי צוותים במחלקת '+division, 'renderTeamLeaderDivisionLogin()');
   });
 }
 
