@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from . import db
+from .competition import require_active_for_team
 from .utils import current_week_id, generate_id, now_iso
 
 
@@ -39,6 +40,10 @@ def save_review_record(data):
 
 def save_call_review(user, data):
     payload = dict(data)
+    agent = db.one("agents", "WHERE agent_id=?", (payload.get("agent_id") or payload.get("AgentId"),))
+    if not agent:
+        raise ValueError("נציג לא נמצא")
+    require_active_for_team(agent["team_id"])
     payload["reviewer_id"] = user["userId"]
     review_id = save_review_record(payload)
     db.insert("activity_log", {

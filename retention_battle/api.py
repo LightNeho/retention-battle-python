@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from . import db
 from .auth import change_own_pin, current_user, login, register_agent, require_role, set_user_pin
+from .competition import reset_division, set_status, states
 from .reviews import agent_review_history, save_call_review
 from .scoring import agent_leaderboard, call_points, config, leader_leaderboard, quality, team_leaderboard
 from .seed import init_db
@@ -292,6 +293,30 @@ def _submit_review_appeal(token, review_id, reason):
     return {"appealId": appeal_id, "status": "PENDING"}
 
 
+def _change_competition_status(token, division, status):
+    user = require_role(token, ["ADMIN", "SHIFT_MANAGER"])
+    result = set_status(division, status)
+    db.insert("activity_log", {
+        "event_id": generate_id("evt"),
+        "message": f"{user['name']} עדכן/ה את מצב התחרות במחלקת {division}",
+        "week_id": config().get("CurrentWeekId", current_week_id()),
+        "timestamp": now_iso(),
+    })
+    return result
+
+
+def _reset_division_competition(token, division):
+    user = require_role(token, ["ADMIN", "SHIFT_MANAGER"])
+    result = reset_division(division, config().get("CurrentWeekId", current_week_id()))
+    db.insert("activity_log", {
+        "event_id": generate_id("evt"),
+        "message": f"{user['name']} איפס/ה את התחרות במחלקת {division}",
+        "week_id": config().get("CurrentWeekId", current_week_id()),
+        "timestamp": now_iso(),
+    })
+    return result
+
+
 def dispatch(name, args):
     init_db()
     if name == "getCurrentWeekId":
@@ -314,6 +339,13 @@ def dispatch(name, args):
         return register_agent(args[0])
     if name == "getDivisions":
         return sorted({team["division"] for team in db.rows("teams") if team["division"]})
+    if name == "getCompetitionStates":
+        require_role(args[0], ["ADMIN", "SHIFT_MANAGER"])
+        return states()
+    if name == "setCompetitionStatus":
+        return _change_competition_status(args[0], args[1], args[2])
+    if name == "resetDivisionCompetition":
+        return _reset_division_competition(args[0], args[1])
     if name == "getTeamsByDivision":
         return [{"teamId": t["team_id"], "name": t["name"]} for t in db.rows("teams", "WHERE division=?", (args[0],))]
     if name == "getUnclaimedAgentsForTeam":

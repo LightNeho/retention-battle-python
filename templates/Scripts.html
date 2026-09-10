@@ -1015,14 +1015,41 @@ var COMP = { division:null, teamId:null, teamName:null };
 
 function renderCompetitionManagement(){
   COMP = { division:null, teamId:null, teamName:null };
-  callServer('getDivisions').then(function(divisions){
+  Promise.all([callServer('getDivisions'), callServer('getCompetitionStates', APP.authToken)]).then(function(res){
+    var divisions = res[0], states = res[1];
+    var stateByDivision = {};
+    states.forEach(function(state){ stateByDivision[state.division] = state.status; });
+    var labels = {NOT_STARTED:'ממתינה להתחלה', ACTIVE:'פעילה', PAUSED:'מושהית'};
+    var controls = divisions.map(function(division){
+      var status = stateByDivision[division] || 'NOT_STARTED';
+      var action = status==='ACTIVE'
+        ? '<button class="btn sm" onclick="setCompetitionStatus('+aj(division)+', \'PAUSED\')">השהה</button>'
+        : '<button class="btn sm primary" onclick="setCompetitionStatus('+aj(division)+', \'ACTIVE\')">התחל תחרות</button>';
+      return '<div class="feed-item"><span><b>'+esc(division)+'</b><span class="kpi-sub"> · '+labels[status]+'</span></span>'
+        + '<span style="display:flex; gap:8px; flex-wrap:wrap;">'+action
+        + '<button class="btn sm danger" onclick="resetDivisionCompetition('+aj(division)+')">איפוס</button></span></div>';
+    }).join('');
     var html = '<div class="card" style="max-width:640px;">'
-      + '<button class="btn primary" style="width:100%; margin-bottom:16px;" onclick="pickRandomCompetitionAgent()">🎲 שיחה רנדומלית (מכל המוקדים)</button>'
+      + '<div class="section-title" style="margin-top:0;">מצב התחרות לפי מחלקה</div>'+controls
+      + '<button class="btn primary" style="width:100%; margin:16px 0;" onclick="pickRandomCompetitionAgent()">🎲 שיחה רנדומלית (מכל המוקדים)</button>'
       + '<div class="wizard-step-title">בחר/י מוקד</div>'
       + divisions.map(function(d){ return '<button class="wizard-choice" onclick="compSelectDivision('+aj(d)+')"><div class="wc-title">'+esc(d)+'</div></button>'; }).join('')
       + '</div>';
     document.getElementById('admin-content').innerHTML = html;
   });
+}
+function setCompetitionStatus(division, status){
+  callServer('setCompetitionStatus', APP.authToken, division, status).then(function(){
+    toast(status==='ACTIVE' ? 'התחרות התחילה במחלקת '+division : 'התחרות הושהתה במחלקת '+division, 'success');
+    renderCompetitionManagement();
+  }).catch(function(e){ toast(e.message, 'error'); });
+}
+function resetDivisionCompetition(division){
+  if(!window.confirm('לאפס את התחרות במחלקת '+division+'? כל בדיקות השיחה, הבונוסים והתגים של המחלקה בשבוע הנוכחי יימחקו.')) return;
+  callServer('resetDivisionCompetition', APP.authToken, division).then(function(res){
+    toast('התחרות אופסה במחלקת '+division+' ('+res.removedReviews+' בדיקות נמחקו)', 'success');
+    renderCompetitionManagement();
+  }).catch(function(e){ toast(e.message, 'error'); });
 }
 function compSelectDivision(division){
   COMP.division = division;
