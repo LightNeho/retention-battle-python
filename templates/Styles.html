@@ -326,4 +326,75 @@
     .login-logo{font-size:22px;}
     .pin-reveal .digits{font-size:30px; letter-spacing:6px; padding:14px 8px;}
   }
+
+  /* ---------- Updated application shell ---------- */
+  #app-shell{background:#090e19;}
+  #sidebar{width:220px; padding:16px 12px; background:#0d1421; border-color:rgba(148,163,184,.14); gap:4px;}
+  #sidebar.collapsed{width:72px;}
+  .brand{padding:6px 8px 18px;}
+  .brand-mark{width:32px; height:32px; border-radius:8px; background:#0e7490;}
+  .brand-text{font-size:13px; font-weight:700;}
+  .partner-label{font-size:9px; color:#67e8f9; margin-bottom:2px;}
+  .nav-item{min-height:40px; padding:9px 10px; border-radius:8px; font-size:13px;}
+  .nav-item:hover{background:#162033;}
+  .nav-item.active{background:rgba(14,165,196,.16); box-shadow:none; color:#cffafe;}
+  .sidebar-toggle{border-radius:8px; font-size:12px;}
+
+  #main{padding:20px 28px 44px;}
+  .topbar,#view-root{max-width:1120px; margin-right:auto; margin-left:auto;}
+  .topbar{margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border);}
+  .page-title{font-size:20px; font-weight:700;}
+  .page-sub{font-size:12px;}
+  .search-box,.week-select,.user-chip{background:#111927; border-color:rgba(148,163,184,.16); border-radius:8px;}
+  .search-box{min-height:40px; padding:8px 12px;}
+  .week-select{min-height:40px; padding:8px 12px;}
+  .user-chip{border-radius:999px;}
+  .user-avatar{background:#155e75; color:#ecfeff;}
+
+  .card{background:#111927; border-color:rgba(148,163,184,.14); border-radius:10px; box-shadow:0 3px 14px rgba(0,0,0,.18);}
+  .card.hoverable:hover{border-color:rgba(34,211,238,.45); transform:translateY(-1px);}
+  .section-title{font-size:14px; margin:26px 0 12px;}
+  .kpi-card{gap:6px;}
+  .kpi-icon{font-size:18px;}
+  .kpi-label,.kpi-sub{font-size:12px;}
+  .kpi-value{font-size:26px; font-weight:700;}
+  .team-card .team-name{font-size:16px;}
+  .progress-track{height:6px; background:#0a101b;}
+  .progress-fill{background:#0ea5c4;}
+  .podium-card{border-radius:10px; background:#111927;}
+  .podium-card.p1{box-shadow:0 4px 20px rgba(251,191,36,.12);}
+  .lb-row{border-bottom:1px solid rgba(148,163,184,.1); border-radius:0;}
+  .lb-row:last-child{border-bottom:0;}
+  .lb-row:not(.header):hover{background:#151f30;}
+  .badge-tile,.badge-chip{background:#111927; border-color:rgba(148,163,184,.14);}
+  .btn{border-radius:8px;}
+  .btn.primary{background:#0e7490; box-shadow:none;}
+  .btn.primary:hover{background:#0f87a7; filter:none;}
+  .field input[type=text],.field input[type=number],.field input[type=date],.field select,.field textarea,.toggle-btn{background:#0b1220; border-color:rgba(148,163,184,.16);}
+  .modal-box{background:#101827; border-radius:12px;}
+  .toast{background:#111927; border-radius:8px;}
+  #login-screen{background:#090e19;}
+  .login-card{background:#111927; border-radius:12px;}
+  .wizard-choice,.user-option{background:#0b1220; border-radius:8px;}
+  .wizard-choice:hover,.user-option:hover{background:#121d2d;}
+
+  #mobile-tabbar{display:none;}
+  @media (max-width:900px){
+    #sidebar{width:min(82vw,320px);}
+    #main{padding-bottom:88px;}
+    #mobile-tabbar{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); position:fixed; right:0; bottom:0; left:0; z-index:130;
+      min-height:64px; padding:6px max(8px,env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));
+      background:rgba(13,20,33,.96); border-top:1px solid rgba(148,163,184,.16); backdrop-filter:blur(12px);}
+    .mobile-nav-item{display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--text-secondary); font-size:10px; font-weight:600; text-align:center;}
+    .mobile-nav-icon{font-size:17px; line-height:1.15;}
+    .mobile-nav-item.active{color:#67e8f9;}
+    body.tv-mode #mobile-tabbar{display:none!important;}
+  }
+
+  @media (max-width:680px){
+    #main{padding:14px 12px 88px;}
+    .topbar{padding-bottom:12px;}
+    .card{border-radius:10px;}
+    .lb-row:not(.header){border-radius:8px;}
+  }
 </style>

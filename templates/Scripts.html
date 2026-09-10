@@ -271,11 +271,13 @@ function submitPinChange(){
 /* ---------- Sidebar / nav ---------- */
 function buildSidebar(){
   var html = '';
-  NAV_ITEMS.filter(function(n){ return n.roles.indexOf(APP.user.role) !== -1; }).forEach(function(item){
+  var visibleItems = NAV_ITEMS.filter(function(n){ return n.roles.indexOf(APP.user.role) !== -1; });
+  visibleItems.forEach(function(item){
     html += '<a class="nav-item" data-nav="'+item.key+'" href="#'+item.key+'">'
       + '<span class="ic">'+item.icon+'</span><span class="nav-label">'+item.label+'</span></a>';
   });
   document.getElementById('nav-list').innerHTML = html;
+  buildMobileNav(visibleItems);
   document.getElementById('sidebar-toggle-btn').onclick = function(){
     document.getElementById('sidebar').classList.toggle('collapsed');
   };
@@ -287,6 +289,18 @@ function buildSidebar(){
     document.getElementById('sidebar').classList.remove('mobile-open');
     document.getElementById('sidebar-backdrop').classList.remove('show');
   };
+}
+
+function buildMobileNav(visibleItems){
+  var preferred = ['dashboard','mycalls','leaderboards','teams','agents'];
+  var items = preferred.map(function(key){
+    return visibleItems.filter(function(item){ return item.key===key; })[0];
+  }).filter(Boolean).slice(0, 5);
+  var tabbar = document.getElementById('mobile-tabbar');
+  tabbar.innerHTML = items.map(function(item){
+    return '<a class="mobile-nav-item" data-mobile-nav="'+item.key+'" href="#'+item.key+'">'
+      + '<span class="mobile-nav-icon">'+item.icon+'</span><span>'+item.label+'</span></a>';
+  }).join('');
 }
 
 window.addEventListener('hashchange', handleRoute);
@@ -313,6 +327,9 @@ function handleRoute(){
   APP.route = hash;
   document.querySelectorAll('.nav-item').forEach(function(n){
     n.classList.toggle('active', hash.split('/')[0] === n.getAttribute('data-nav'));
+  });
+  document.querySelectorAll('.mobile-nav-item').forEach(function(n){
+    n.classList.toggle('active', hash.split('/')[0] === n.getAttribute('data-mobile-nav'));
   });
   document.getElementById('sidebar').classList.remove('mobile-open');
   var backdrop = document.getElementById('sidebar-backdrop');
