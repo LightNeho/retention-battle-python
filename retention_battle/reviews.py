@@ -55,15 +55,27 @@ def agent_review_history(agent_id, week_id):
 
     cfg = config()
     result = []
+    reviewers = {user["user_id"]: user["name"] for user in db.rows("users")}
+    appeals = {appeal["review_id"]: appeal for appeal in db.rows("review_appeals", "WHERE agent_id=?", (agent_id,))}
     for row in db.rows("call_reviews", "WHERE agent_id=? AND week_id=? AND status!='CANCELLED' ORDER BY timestamp DESC", (agent_id, week_id)):
+        appeal = appeals.get(row["review_id"])
         result.append({
             "reviewId": row["review_id"],
             "date": row["date"],
+            "time": row["time"],
             "customerNumber": row["customer_number"],
             "retentionSuccess": row["retention_success"],
             "qualityScore": quality(row, cfg),
             "points": call_points(row, cfg),
             "reviewerNote": row["reviewer_note"],
+            "reviewerName": reviewers.get(row["reviewer_id"], "לא צוין"),
+            "excellentCallBonus": row["excellent_call_bonus"],
+            "categories": {
+                "tashaul": {"label": "תשאול", "value": row["tashaul"]},
+                "hatamatHatzaa": {"label": "התאמת הצעה", "value": row["hatamat_hatzaa"]},
+                "eichutSherut": {"label": "איכות שירות", "value": row["eichut_sherut"]},
+            },
+            "appealStatus": appeal["status"] if appeal else None,
+            "appealReason": appeal["reason"] if appeal else "",
         })
     return result
-

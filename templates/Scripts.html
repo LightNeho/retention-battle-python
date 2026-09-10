@@ -14,6 +14,7 @@ var APP = {
 var NAV_ITEMS = [
   { key:'dashboard', icon:'🏠', label:'Dashboard', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
   { key:'mycalls', icon:'📞', label:'השיחות שלי', roles:['AGENT'] },
+  { key:'teamcalls', icon:'☎️', label:'שיחות הצוות', roles:['TEAM_LEADER'] },
   { key:'leaderboards', icon:'🏆', label:'דירוגים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
   { key:'teams', icon:'👥', label:'צוותים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
   { key:'agents', icon:'👑', label:'נציגים', roles:['ADMIN','SHIFT_MANAGER','TEAM_LEADER','AGENT','VIEWER'] },
@@ -292,7 +293,7 @@ function buildSidebar(){
 }
 
 function buildMobileNav(visibleItems){
-  var preferred = ['dashboard','mycalls','leaderboards','teams','agents'];
+  var preferred = ['dashboard','mycalls','teamcalls','leaderboards','teams'];
   var items = preferred.map(function(key){
     return visibleItems.filter(function(item){ return item.key===key; })[0];
   }).filter(Boolean).slice(0, 5);
@@ -357,6 +358,7 @@ function renderCurrentRoute(){
   var routes = {
     dashboard: renderDashboardPage,
     mycalls: renderMyCallsPage,
+    teamcalls: renderTeamCallsPage,
     leaderboards: renderLeaderboardsPage,
     teams: function(){ param ? renderTeamDetailPage(param) : renderTeamsListPage(); },
     agents: function(){ param ? renderAgentDetailPage(param) : renderAgentsListPage(); },
@@ -1065,7 +1067,33 @@ function renderMyCallsPage(){
     document.getElementById('view-root').innerHTML = html;
   }).catch(showLoadError);
 }
-function renderDocumentedCallCard(call){
+function renderTeamCallsPage(){
+  setPageTitle('שיחות הצוות', 'שיחות מתועדות וסטטוס ערעורים · שבוע ' + APP.weekId);
+  callServer('getTeamCallHistory', APP.authToken, APP.weekId).then(function(data){
+    var html = '<div class="card" style="margin-bottom:16px;"><div style="font-weight:800;">👥 '+esc(data.teamName)+'</div><div class="kpi-sub">אפשר להגיש ערעור על כל שיחה מתועדת. הסטטוס יוצג גם לנציג/ה.</div></div>';
+    html += data.agents.map(function(agent){
+      return '<div class="section-title">👤 '+esc(agent.name)+'<span class="tag">'+agent.calls.length+' שיחות</span></div>'
+        + (agent.calls.length ? agent.calls.map(function(call){ return renderDocumentedCallCard(call, {canAppeal:true, agentName:agent.name}); }).join('') : emptyState('📞','עדיין לא תועדו שיחות לנציג/ה זה השבוע'));
+    }).join('');
+    document.getElementById('view-root').innerHTML = html || emptyState('👥','לא נמצאו נציגים בצוות');
+  }).catch(showLoadError);
+}
+function appealStatusLabel(status){
+  return {PENDING:'ממתין לבדיקת אחמ״ש', UNDER_REVIEW:'נמצא בבדיקה', APPROVED:'הערעור אושר', REJECTED:'הערעור נדחה'}[status] || status;
+}
+function openReviewAppealModal(reviewId, agentName){
+  var html = '<div class="modal-title">ערעור על בדיקת שיחה — '+esc(agentName)+'</div>'
+    + '<div class="field"><label>סיבת הערעור</label><textarea id="appeal-reason" placeholder="מה לדעתך צריך להיבדק מחדש?"></textarea></div>'
+    + '<div style="display:flex; gap:10px; flex-wrap:wrap;"><button class="btn" onclick="closeModal()">ביטול</button><button class="btn primary" onclick="submitReviewAppeal('+aj(reviewId)+')">הגש ערעור</button></div>';
+  openModal(html);
+}
+function submitReviewAppeal(reviewId){
+  var reason = document.getElementById('appeal-reason').value;
+  callServer('submitReviewAppeal', APP.authToken, reviewId, reason).then(function(){
+    closeModal(); toast('הערעור הוגש וממתין לבדיקת אחמ״ש', 'success'); renderTeamCallsPage();
+  }).catch(function(err){ toast(err.message, 'error'); });
+}
+function renderDocumentedCallCard(call, options){
   var catRows = Object.keys(call.categories).map(function(k){
     var c = call.categories[k];
     return '<div class="stat-row"><span>'+esc(c.label)+'</span><b>'+c.value+'/10</b></div>';
@@ -1078,6 +1106,8 @@ function renderDocumentedCallCard(call){
     + '<div style="margin-top:10px;">'+catRows+'</div>'
     + '<div class="stat-row"><span>שימור מוצלח</span><b>'+(call.retentionSuccess==='כן'?'✅ כן':'❌ לא')+'</b></div>'
     + (call.excellentCallBonus==='כן' ? '<div class="pill done" style="margin-top:8px;">⭐ בונוס שיחה מצטיינת</div>' : '')
+    + (call.appealStatus ? '<div class="pill progress" style="margin-top:8px;">⚖️ ערעור: '+esc(appealStatusLabel(call.appealStatus))+'</div>' : '')
+    + (options && options.canAppeal && !call.appealStatus ? '<button class="btn sm" style="margin-top:10px;" onclick="openReviewAppealModal('+aj(call.reviewId)+', '+aj(options.agentName)+')">⚖️ ערעור</button>' : '')
     + (call.reviewerNote ? '<div class="field" style="margin-top:12px;"><label>הערת אחמ"ש</label><div style="font-size:13px; color:var(--text-secondary);">'+esc(call.reviewerNote)+'</div></div>' : '')
     + '</div>';
 }

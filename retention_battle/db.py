@@ -16,6 +16,9 @@ SCHEMAS = {
         agent_id TEXT, team_id TEXT, leader_id TEXT, customer_number TEXT, tashaul REAL, hatamat_hatzaa REAL,
         eichut_sherut REAL, review_purpose TEXT, round_id TEXT, retention_success TEXT, leave_reason TEXT,
         offer_given TEXT, excellent_call_bonus TEXT, reviewer_note TEXT, week_id TEXT, status TEXT""",
+    "review_appeals": """appeal_id TEXT PRIMARY KEY, review_id TEXT UNIQUE, agent_id TEXT, team_id TEXT,
+        submitted_by TEXT, reason TEXT, status TEXT, submitted_at TEXT, resolved_by TEXT, resolved_at TEXT,
+        resolution_note TEXT""",
     "manager_tasks": "task_id TEXT PRIMARY KEY, name TEXT, description TEXT, points REAL, type TEXT, condition_key TEXT, target_value REAL, active INTEGER",
     "manager_task_results": "result_id TEXT PRIMARY KEY, task_id TEXT, leader_id TEXT, week_id TEXT, status TEXT, progress REAL, updated_at TEXT, approved_by TEXT",
     "bonuses": "bonus_id TEXT PRIMARY KEY, target_type TEXT, target_id TEXT, points REAL, reason TEXT, week_id TEXT, given_by TEXT, given_at TEXT",
@@ -69,6 +72,8 @@ def setup_schema():
     with connect() as conn:
         for table, schema in SCHEMAS.items():
             conn.execute(f"CREATE TABLE IF NOT EXISTS {table} ({schema})")
+        if is_postgres():
+            conn.execute("ALTER TABLE review_appeals ENABLE ROW LEVEL SECURITY")
 
 
 def rows(table, where="", params=()):

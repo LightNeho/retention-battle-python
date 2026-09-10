@@ -206,6 +206,85 @@ def _close_current_week(token):
     }
 
 
+def _team_for_leader(user):
+    team = db.one("teams", "WHERE team_leader_id=?", (user["userId"],))
+    if not team:
+        raise ValueError("לא נמצא צוות המשויך לראש הצוות")
+    return team
+
+
+def _can_access_agent_history(user, agent_id):
+    if user["role"] in ("ADMIN", "SHIFT_MANAGER"):
+        return
+    if user["role"] == "AGENT" and user["userId"] == agent_id:
+        return
+    if user["role"] == "TEAM_LEADER":
+        team = _team_for_leader(user)
+        agent = db.one("agents", "WHERE agent_id=?", (agent_id,))
+        if agent and agent["team_id"] == team["team_id"]:
+            return
+    raise ValueError("אין לך הרשאה לצפות בשיחות אלה")
+
+
+def _team_call_history(token, week_id):
+    user = require_role(token, ["TEAM_LEADER"])
+    team = _team_for_leader(user)
+    agents = db.rows("agents", "WHERE team_id=? AND status!='INACTIVE' ORDER BY name", (team["team_id"],))
+    return {
+        "teamId": team["team_id"],
+        "teamName": team["name"],
+        "agents": [
+            {"agentId": agent["agent_id"], "name": agent["name"], "calls": agent_review_history(agent["agent_id"], week_id)}
+            for agent in agents
+        ],
+    }
+
+
+def _submit_review_appeal(token, review_id, reason):
+    user = require_role(token, ["TEAM_LEADER"])
+    team = _team_for_leader(user)
+    review = db.one("call_reviews", "WHERE review_id=? AND status!='CANCELLED'", (review_id,))
+    if not review or review["team_id"] != team["team_id"]:
+        raise ValueError("לא נמצאה שיחה בצוות שלך")
+    if db.one("review_appeals", "WHERE review_id=?", (review_id,)):
+        raise ValueError("כבר הוגש ערעור עבור שיחה זו")
+    reason = str(reason or "").strip()
+    if len(reason) < 3:
+        raise ValueError("יש לציין סיבת ערעור קצרה")
+    appeal_id = generate_id("apl")
+    db.insert("review_appeals", {
+        "appeal_id": appeal_id,
+        "review_id": review_id,
+        "agent_id": review["agent_id"],
+        "team_id": team["team_id"],
+        "submitted_by": user["userId"],
+        "reason": reason,
+        "status": "PENDING",
+        "submitted_at": now_iso(),
+        "resolved_by": "",
+        "resolved_at": "",
+        "resolution_note": "",
+    })
+    db.insert("activity_log", {
+        "event_id": generate_id("evt"),
+        "message": f"{user['name']} הגיש/ה ערעור על בדיקת שיחה",
+        "week_id": review["week_id"],
+        "timestamp": now_iso(),
+    })
+    db.insert("audit_log", {
+        "log_id": generate_id("aud"),
+        "timestamp": now_iso(),
+        "user_id": user["userId"],
+        "user_name": user["name"],
+        "action": "SUBMIT_REVIEW_APPEAL",
+        "entity_type": "CALL_REVIEW",
+        "entity_id": review_id,
+        "old_value": "",
+        "new_value": reason,
+    })
+    return {"appealId": appeal_id, "status": "PENDING"}
+
+
 def dispatch(name, args):
     init_db()
     if name == "getCurrentWeekId":
@@ -287,8 +366,13 @@ def dispatch(name, args):
         current_user(args[0])
         return next((leader for leader in leader_leaderboard(args[2]) if leader["leaderId"] == args[1]), {})
     if name == "getAgentReviewHistory":
-        current_user(args[0])
+        user = current_user(args[0])
+        _can_access_agent_history(user, args[1])
         return agent_review_history(args[1], args[2])
+    if name == "getTeamCallHistory":
+        return _team_call_history(args[0], args[1])
+    if name == "submitReviewAppeal":
+        return _submit_review_appeal(args[0], args[1], args[2])
     if name == "getAllUsersForAdmin":
         require_role(args[0], ["ADMIN", "SHIFT_MANAGER"])
         return [{"userId": u["user_id"], "name": u["name"], "role": u["role"], "teamId": u["team_id"], "claimed": bool(u["claimed"])} for u in db.rows("users")]
